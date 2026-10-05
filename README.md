@@ -4,7 +4,7 @@ A capability memory layer that allows AI agents to discover, reuse, and evolve g
 
 中文定位：一个让 Agent 学会积累、复用和演进能力的能力记忆层。
 
-EvoTool helps AI agents turn one-off generated scripts into validated, searchable, reusable, and evolvable tools. Instead of regenerating the same helper code for similar tasks, an agent can build a learned tool memory and reuse proven capabilities across future work.
+EvoTool helps AI agents turn one-off generated scripts into validated, searchable, reusable, and evolvable capabilities. Instead of regenerating the same helper code for similar tasks, an agent can build a capability memory and reuse proven tools and shared libraries across future work.
 
 ## Status
 
@@ -17,12 +17,56 @@ Task
   -> Search learned tools
   -> Reuse if matched
   -> Generate if missing
+  -> Detect reusable libraries
   -> Validate in sandbox
   -> Apply safety policy and review
   -> Save tool metadata and code
+  -> Update registry and dependency graph
   -> Record execution results
-  -> Evolve or deprecate tools over time
+  -> Evolve, refactor, or deprecate capabilities over time
 ```
+
+## Capability Memory Architecture
+
+EvoTool is not just a tool cache. It is designed as an Agent Capability Memory with three layers:
+
+```text
+Agent Capability Memory
+
+  tools/        # User-callable capabilities
+  libraries/    # Shared implementation building blocks
+  registry/     # Metadata, embeddings, versions, dependencies, history, and policies
+```
+
+### Tools
+
+Tools are capabilities an agent can directly select and execute:
+
+```text
+pdf_to_excel
+csv_analyzer
+sentiment_report_generator
+webpage_to_markdown
+```
+
+Each tool should have a semantic name, a manifest, tests, documentation, execution history, and lifecycle state.
+
+### Libraries
+
+Libraries are shared lower-level capabilities used by multiple tools:
+
+```text
+pdf_parser
+excel_writer
+text_processor
+data_cleaner
+```
+
+A tool can depend on libraries instead of copying the same helper code again and again.
+
+### Registry
+
+The registry is the capability index. It stores metadata, embeddings, categories, versions, execution history, safety policies, benchmark records, and the dependency graph between tools and libraries.
 
 ## Why Not Just Skills?
 
@@ -42,11 +86,55 @@ Learned Tool:
   flow: Agent creates capability -> EvoTool validates and stores it -> Future agents reuse it
 ```
 
-EvoTool is not only a tool registry. It manages the lifecycle of generated tools: discovery, validation, safety review, retrieval, execution history, benchmarking, versioning, and future evolution.
+EvoTool is not only a skill registry or tool registry. It manages the lifecycle of generated capabilities: naming, validation, safety review, retrieval, dependency reuse, execution history, benchmarking, versioning, and future evolution.
+
+## Tool Naming Matters
+
+Agents should not save tools as `tool1.py`, `test.py`, or `helper.py`.
+
+A learned tool should have a semantic manifest:
+
+```json
+{
+  "name": "pdf_table_extractor",
+  "description": "Extract tables from PDF documents and export to Excel format",
+  "category": "document_processing",
+  "input": {
+    "file": "pdf"
+  },
+  "output": {
+    "file": "xlsx"
+  }
+}
+```
+
+Good names improve retrieval because future agents search by intent, description, metadata, embeddings, and execution history.
+
+## Retrieval Strategy
+
+EvoTool should not rely on tool names alone. Retrieval should combine:
+
+- Capability category
+- Semantic embeddings
+- Metadata filters, such as input, output, domain, and runtime
+- Safety policy status
+- Dependency health
+- Execution history, success rate, and usage count
+
+Example:
+
+```text
+Task: Analyze customer feedback sentiment and generate a report
+  -> Categories: NLP, Data Analysis, Report Generation
+  -> Metadata: input=csv, output=markdown
+  -> Prefer tools with higher success rate and healthy dependencies
+```
 
 ## What EvoTool Aims To Provide
 
 - Tool Memory for generated tools
+- Shared Library Memory for reusable implementation building blocks
+- Registry for metadata, embeddings, versions, dependency graph, policies, and execution history
 - Benchmarking to prove reduced token usage and task latency
 - Safety mechanisms, including sandboxing, permissions, review, execution limits, and dependency isolation
 - MCP integration for agent ecosystems
@@ -73,7 +161,7 @@ EvoTool should prove its value with reproducible benchmarks comparing:
 
 ```text
 Baseline: Agent regenerates tools for recurring tasks.
-EvoTool: Agent searches learned tools first and generates only when needed.
+EvoTool: Agent searches learned tools and libraries first, then generates only when needed.
 ```
 
 Key metrics:
@@ -81,23 +169,29 @@ Key metrics:
 - Tool generation count
 - Duplicate generation count
 - Tool reuse count
+- Library reuse count
 - Average task latency
 - Average token usage
 - Success and failure rates
 - Safety policy blocks
+- Dependency-related failures
 
 ## Roadmap
 
 - Core domain models
+- Tool and Library manifests
 - Core ports and services
-- Filesystem ToolStore
+- Filesystem ToolStore and LibraryStore
 - Keyword-based retrieval
+- Registry and dependency graph
 - Validation and execution history
 - Safety policy model
 - Benchmark runner
 - MCP server adapter
 - Eino/OpenHands adapters
 - Semantic/vector retrieval
+- Code similarity detection
+- Shared library extraction candidates
 - Tool versioning and lifecycle management
 - Failure analysis and automatic repair
 

@@ -10,7 +10,41 @@ EvoTool 的定位是：
 
 > 一个让 Agent 学会积累、复用和演进能力的能力记忆层。
 
-EvoTool 不是简单的 Tool Cache。它的目标是围绕 Agent 生成工具这件事，形成完整闭环：Tool Memory + Benchmark 证明减少 token 和时间 + 安全机制 + Eino/OpenHands Adapter + 完整文档 + 实际案例。
+EvoTool 不是简单的 Tool Cache。它的目标是围绕 Agent 生成工具这件事，形成完整闭环：Tool Memory + Library Reuse + Registry + Benchmark + Security + Lifecycle + Adapter + Docs + Real Cases。
+
+## 总体框架
+
+EvoTool 应该被设计成 Agent Capability Memory，而不是单纯的工具文件夹。
+
+核心框架分为三层：
+
+```text
+Agent Capability Memory
+
+  tools/        # 用户或 Agent 可以直接调用的顶层能力
+  libraries/    # 多个 Tool 共享的底层能力和公共代码
+  registry/     # 元数据、向量索引、依赖关系、版本、历史和安全策略
+```
+
+三层职责：
+
+- Tool 层：表示 Agent 可以直接调用的能力，例如 `pdf_to_excel`、`csv_analyzer`、`report_generator`。
+- Library 层：表示多个 Tool 共享的底层能力，例如 `pdf_parser`、`excel_writer`、`text_processor`。
+- Registry 层：表示能力目录和检索中心，保存 metadata、embedding、version、execution_history、dependency_graph、policy 等信息。
+
+关系示意：
+
+```text
+                 Tool
+                  |
+        +---------+---------+
+        |                   |
+      uses                uses
+        |                   |
+    Library A          Library B
+```
+
+设计目标不是“把代码保存下来”，而是像软件生态一样管理 Agent 生成出来的能力、依赖、版本和复用关系。
 
 ## 项目定位
 
@@ -20,20 +54,23 @@ EvoTool 是一个面向 AI Agent 的能力记忆层。它的核心职责是：�
 
 ```text
 Agent 发现能力缺口
-  -> 生成工具
-  -> 验证工具
+  -> 生成 Tool
+  -> 识别是否有可复用 Library
+  -> 验证 Tool 和 Library
   -> 安全审查
-  -> 保存到 Tool Memory
-  -> 未来语义检索
-  -> 复用工具
+  -> 保存到 Capability Memory
+  -> 更新 Registry
+  -> 未来多级检索
+  -> 复用 Tool 或 Library
   -> 记录执行效果
-  -> 版本演进或废弃
+  -> 版本演进、重构或废弃
 ```
 
 项目要证明的价值不是“能保存文件”，而是：
 
 - Agent 可以积累能力。
 - 相似任务可以复用已有工具。
+- 多个工具可以共享底层库，减少重复代码。
 - 重复工具生成次数下降。
 - 任务耗时和 token 成本下降。
 - 生成工具经过验证、安全控制和生命周期管理。
@@ -62,9 +99,12 @@ Skill 更像人工维护的能力模块。EvoTool 的 Learned Tool 更像 Agent 
 因此，EvoTool 不能只做 Skill Registry，也不能只是 Tool Registry。它必须覆盖以下问题：
 
 - 工具为什么被生成？
+- 工具如何命名？
 - 工具如何验证？
 - 工具是否允许保存？
 - 工具是否允许执行？
+- 工具依赖哪些 Library？
+- 是否存在重复代码可以抽取为 Library？
 - 未来任务如何检索它？
 - 失败后如何记录、降级、修复或升级？
 
@@ -107,6 +147,7 @@ evotool/
   internal/
     domain/                  # 核心领域对象和领域规则
       tool.go
+      library.go
       manifest.go
       task.go
       execution.go
@@ -115,6 +156,9 @@ evotool/
       lifecycle.go
       policy.go
       benchmark.go
+      registry.go
+      dependency.go
+      similarity.go
 
     ports/                   # EvoTool 核心拥有的接口定义
       store.go
@@ -127,6 +171,10 @@ evotool/
       policy.go
       reviewer.go
       benchmark.go
+      registry.go
+      library_store.go
+      dependency_resolver.go
+      similarity_detector.go
       mcp.go
 
     service/                 # 应用服务和用例编排
@@ -136,6 +184,9 @@ evotool/
       version_service.go
       policy_service.go
       benchmark_service.go
+      registry_service.go
+      library_service.go
+      dependency_service.go
 
     adapter/                 # 可替换的基础设施实现
       store/
@@ -144,6 +195,7 @@ evotool/
       retriever/
         keyword/
         vector/
+        hybrid/
       generator/
         openai/
       executor/
@@ -154,6 +206,9 @@ evotool/
         docker/
       benchmark/
         local/
+      similarity/
+        ast/
+        embedding/
       mcp/
         server/
         client/
@@ -178,6 +233,9 @@ evotool/
     benchmark.md
     lifecycle.md
     adapters.md
+    naming.md
+    retrieval.md
+    dependency-management.md
     roadmap.md
 ```
 
@@ -215,22 +273,321 @@ adapter implementations -> ports/domain
 
 这些依赖只能出现在 Adapter 层。
 
+## 工具命名要求
+
+工具命名非常重要。Agent 后续不是靠文件名调用工具，而是通过任务意图、embedding、metadata 和执行历史进行匹配。
+
+工具名称必须满足：
+
+- 使用稳定的 `snake_case`。
+- 名字能表达核心能力。
+- 优先使用 `领域_动作_对象` 或 `输入_to_输出` 风格。
+- 不允许使用 `tool1`、`test`、`helper`、`abc_tool`、`pdf` 这种无语义名称。
+- 名称必须和 description、category、input、output、capabilities 一致。
+
+推荐示例：
+
+```text
+pdf_table_extractor
+pdf_to_excel
+csv_analyzer
+excel_formatter
+sentiment_report_generator
+webpage_to_markdown
+```
+
+不推荐示例：
+
+```text
+tool1
+test
+helper
+abc_tool
+pdf
+main_tool
+```
+
+Manifest 至少要表达这些信息：
+
+```json
+{
+  "name": "pdf_table_extractor",
+  "description": "Extract tables from PDF documents and export to Excel format",
+  "category": "document_processing",
+  "input": {
+    "file": "pdf"
+  },
+  "output": {
+    "file": "xlsx"
+  },
+  "capabilities": ["pdf_table_extraction", "xlsx_generation"]
+}
+```
+
+## 工具目录管理要求
+
+一个 Tool 必须对应一个独立目录。不要把所有工具平铺成一堆脚本文件。
+
+禁止：
+
+```text
+tools/
+  tool1.py
+  tool2.py
+  tool3.py
+```
+
+推荐：
+
+```text
+tools/
+  pdf_table_extractor/
+    manifest.json
+    main.py
+    requirements.txt
+    tests/
+    README.md
+
+  csv_analyzer/
+    manifest.json
+    main.py
+    tests/
+
+  image_compressor/
+    manifest.json
+    main.py
+```
+
+每个 Tool 都应该被当成一个独立能力单元，类似一个轻量软件包或 Docker 镜像。
+
+## Tool 与 Library 分层
+
+不要把所有可复用代码都建模成 Tool。
+
+```text
+Agent Capability System
+
+        |
+   +----+----+
+   |         |
+ Tools   Libraries
+ 工具     公共能力
+```
+
+Tool 层负责用户或 Agent 可直接调用的能力：
+
+```text
+pdf_to_excel
+csv_analysis
+excel_format
+report_generator
+```
+
+Library 层负责多个 Tool 共享的底层代码：
+
+```text
+libraries/
+  pdf_parser/
+    manifest.json
+    parser.py
+    extractor.py
+    tests/
+
+  excel_writer/
+    manifest.json
+    writer.py
+    formatter.py
+    tests/
+
+  text_processor/
+    manifest.json
+    cleaner.py
+    tokenizer.py
+    tests/
+```
+
+Tool 可以依赖 Library：
+
+```python
+from shared.pdf_parser import extractor
+from shared.excel_writer import writer
+```
+
+规则：
+
+- Tool 是可被 Agent 直接检索和调用的顶层能力。
+- Library 默认不直接暴露给用户任务调用。
+- Library 必须有版本、manifest、测试和依赖声明。
+- Tool 对 Library 的依赖必须被记录进 Registry。
+- Library 变更必须触发依赖它的 Tool 重新验证。
+
+## Shared Library 来源
+
+Shared Library 有两个来源。
+
+第一类：开发者预置基础库。
+
+类似 MCP Server 或内置 capability，例如：
+
+```text
+filesystem
+database
+http
+excel
+pdf
+text
+```
+
+第二类：Agent 发现重复代码后抽取出来。
+
+例如第一次生成：
+
+```text
+pdf_to_excel
+  extract_table()
+```
+
+第二次又生成：
+
+```text
+pdf_summary
+  extract_table()
+```
+
+系统通过 Code Similarity Detection 发现两个 `extract_table()` 功能相似，然后进入候选重构流程：
+
+```text
+pdf_to_excel.extract_table
+pdf_summary.extract_table
+  -> similarity score 0.95
+  -> propose shared library pdf_table_extractor_core
+  -> validate dependent tools
+  -> save library
+  -> update dependency graph
+```
+
+注意：自动抽取 Shared Library 是第二阶段能力。MVP 可以先记录重复代码和相似度，不要直接自动重构生产工具。
+
+## 多级检索要求
+
+工具检索不能只搜索 Tool 名字。
+
+必须支持或预留多级检索：
+
+```text
+用户任务
+  -> 能力分类召回
+  -> Embedding 语义召回
+  -> Metadata 过滤
+  -> 安全策略过滤
+  -> 依赖状态过滤
+  -> 执行历史排序
+  -> LLM 或规则最终选择
+```
+
+示例：
+
+用户任务：
+
+```text
+分析用户评论情绪，然后生成报告
+```
+
+候选能力分类：
+
+```text
+NLP
+Data Analysis
+Report Generation
+```
+
+Metadata 过滤示例：
+
+```json
+{
+  "input": "csv",
+  "output": "markdown",
+  "domain": "customer_feedback"
+}
+```
+
+执行历史排序示例：
+
+```text
+tool A: success_rate 98%, usage_count 500
+tool B: success_rate 50%, usage_count 3
+```
+
+在其他条件接近时，优先选择成功率高、使用次数多、最近验证通过、依赖健康的工具。
+
+## Registry 要求
+
+Registry 是 EvoTool 的能力目录，不只是一个文件列表。
+
+Registry 至少应该保存：
+
+- Tool metadata
+- Library metadata
+- Embedding index
+- Category index
+- Version records
+- Execution history
+- Dependency graph
+- Validation status
+- Security policy
+- Review status
+- Benchmark records
+
+推荐结构：
+
+```text
+registry/
+  metadata/
+  embeddings/
+  versions/
+  execution_history/
+  dependency_graph/
+  policies/
+  benchmarks/
+```
+
 ## 核心领域概念
 
 后续代码中应统一使用以下概念。
 
 ### Tool
 
-表示一个 EvoTool 学到或注册的可复用能力。
+表示一个 EvoTool 学到或注册的可复用顶层能力。
 
 建议字段：
 
 - ID
 - Name
 - Description
+- Category
 - Manifest
 - CurrentVersion
 - Versions
+- Dependencies
+- LifecycleStatus
+- TrustLevel
+- CreatedAt
+- UpdatedAt
+
+### Library
+
+表示多个 Tool 共享的底层能力或公共代码。
+
+建议字段：
+
+- ID
+- Name
+- Description
+- Category
+- Manifest
+- CurrentVersion
+- Versions
+- UsedByTools
 - LifecycleStatus
 - TrustLevel
 - CreatedAt
@@ -238,17 +595,35 @@ adapter implementations -> ports/domain
 
 ### ToolManifest
 
-表示工具的机器可读契约。
+表示 Tool 的机器可读契约。
 
 建议字段：
 
 - Name
 - Description
+- Category
 - Runtime
 - EntryPoint
 - Inputs
 - Outputs
 - Capabilities
+- Dependencies
+- LibraryRefs
+- Tags
+- Permissions
+- ResourceLimits
+
+### LibraryManifest
+
+表示 Library 的机器可读契约。
+
+建议字段：
+
+- Name
+- Description
+- Category
+- Runtime
+- Exports
 - Dependencies
 - Tags
 - Permissions
@@ -264,6 +639,7 @@ adapter implementations -> ports/domain
 - InputSummary
 - Constraints
 - ExpectedOutput
+- Domain
 - Metadata
 
 ### ToolCandidate
@@ -277,6 +653,8 @@ adapter implementations -> ports/domain
 - MatchReason
 - Source
 - RiskSummary
+- DependencyHealth
+- HistoricalSuccessRate
 
 ### GeneratedTool
 
@@ -289,6 +667,7 @@ adapter implementations -> ports/domain
 - Tests
 - Readme
 - Dependencies
+- LibraryCandidates
 - GenerationReason
 
 ### ValidationResult
@@ -303,6 +682,7 @@ adapter implementations -> ports/domain
 - TestOutput
 - SandboxReport
 - PolicyReport
+- DependencyReport
 
 ### ExecutionResult
 
@@ -320,6 +700,29 @@ adapter implementations -> ports/domain
 - Duration
 - TokenUsage
 - Metadata
+
+### DependencyGraph
+
+表示 Tool 和 Library 之间的依赖关系。
+
+建议字段：
+
+- Nodes
+- Edges
+- VersionConstraints
+- HealthStatus
+
+### SimilarityReport
+
+表示代码或能力相似度检测结果。
+
+建议字段：
+
+- SourceA
+- SourceB
+- SimilarityScore
+- Reason
+- SuggestedAction
 
 ### ToolLifecycle
 
@@ -359,6 +762,7 @@ adapter implementations -> ports/domain
 - TotalTasks
 - ToolGeneratedCount
 - ToolReusedCount
+- LibraryReusedCount
 - DuplicateGenerationCount
 - AverageLatency
 - AverageTokenUsage
@@ -378,8 +782,14 @@ type ToolStore interface {
     Update(ctx context.Context, tool domain.Tool) error
 }
 
+type LibraryStore interface {
+    Save(ctx context.Context, library domain.Library) error
+    Get(ctx context.Context, id string) (domain.Library, error)
+    Update(ctx context.Context, library domain.Library) error
+}
+
 type ToolRetriever interface {
-    Search(ctx context.Context, intent string, limit int) ([]domain.ToolCandidate, error)
+    Search(ctx context.Context, query domain.RetrievalQuery) ([]domain.ToolCandidate, error)
 }
 
 type ToolGenerator interface {
@@ -396,6 +806,14 @@ type ToolExecutor interface {
 
 type ExecutionRecorder interface {
     RecordExecution(ctx context.Context, result domain.ExecutionResult) error
+}
+
+type DependencyResolver interface {
+    Resolve(ctx context.Context, tool domain.Tool) (domain.DependencyGraph, error)
+}
+
+type SimilarityDetector interface {
+    Detect(ctx context.Context, files []domain.SourceFile) ([]domain.SimilarityReport, error)
 }
 
 type PolicyEngine interface {
@@ -419,21 +837,25 @@ type BenchmarkRunner interface {
 
 ```text
 TaskSpec
-  -> 搜索 learned tools
+  -> 多级检索 learned tools
   -> 如果找到匹配工具：
+       检查依赖状态
        执行安全策略检查
        执行工具
        记录执行结果
   -> 如果没有找到匹配工具：
        生成工具
+       检查命名和 Manifest
+       识别可复用 Library
        在沙箱中验证工具
        执行安全策略检查
        保存工具和元数据
+       更新 Registry
        执行工具
        记录执行结果
 ```
 
-不要一开始就做自动修复、分布式执行、多 Agent 协作。那些属于后续阶段。
+不要一开始就做自动修复、自动抽取公共库、分布式执行、多 Agent 协作。那些属于后续阶段。
 
 ## Benchmark 要求
 
@@ -451,11 +873,13 @@ EvoTool：先检索 Tool Memory，找不到才生成工具。
 - 工具生成次数
 - 重复工具生成次数
 - 工具复用次数
+- Library 复用次数
 - 平均任务耗时
 - 平均 token 使用量
 - 成功率
 - 失败率
 - 因安全策略被拦截的执行次数
+- 因依赖失效导致的失败次数
 
 README、docs 和示例中可以使用类似表达：
 
@@ -499,6 +923,7 @@ Agent 自动生成 delete_database.py
 - 必须记录足够的执行元数据，方便排查失败。
 - 生成工具声明的依赖必须视为不可信输入。
 - 涉及删除、覆盖、网络请求、数据库写入、系统命令的工具默认需要 Review。
+- Library 更新必须触发依赖 Tool 的重新验证。
 
 第一版 MVP 可以先使用本地 Executor，但架构上必须允许之后替换成 Docker 或其他沙箱实现。
 
@@ -520,6 +945,7 @@ pdf_to_excel:v1
 - 依赖包失效。
 - 新 PDF 格式不兼容。
 - 原工具安全策略不再满足。
+- 依赖 Library 出现破坏性更新。
 - 有更好的 v2 版本。
 
 因此，工具必须有生命周期和版本管理。
@@ -543,11 +969,13 @@ Generate v1
 实现要求：
 
 - 每个工具必须有版本。
+- 每个 Library 必须有版本。
 - 当前版本必须显式标记。
 - 执行历史必须记录版本号。
 - 多次失败的工具不能继续被静默复用。
 - 高风险工具不能自动升级为 Approved。
 - 依赖变更必须进入验证流程。
+- Library 版本升级必须记录影响范围。
 
 ## MCP 要求
 
@@ -575,6 +1003,8 @@ internal/adapter/mcp/
 - `evotool.record_execution`
 - `evotool.review_tool`
 - `evotool.run_benchmark`
+- `evotool.search_libraries`
+- `evotool.get_dependency_graph`
 
 MCP 实现规则：
 
@@ -616,6 +1046,7 @@ EvoTool 必须有实际案例。案例要能体现“先生成、再复用、再
 
 - 第一次任务：没有工具，生成并验证工具。
 - 第二次任务：检索并复用工具。
+- Library 复用：展示多个工具如何共享底层库。
 - Benchmark：对比是否减少生成次数、耗时和 token。
 - 安全策略：说明工具获得了哪些权限、被限制了哪些行为。
 
@@ -641,12 +1072,14 @@ EvoTool 必须有实际案例。案例要能体现“先生成、再复用、再
 重点测试：
 
 - 工具搜索决策逻辑
+- Library 搜索和依赖解析
 - 保存和读取行为
 - 验证成功/失败行为
 - 安全策略允许/拒绝行为
 - 生命周期状态流转
 - 执行结果记录
 - Benchmark 指标计算
+- 相似度检测结果转换
 - 错误传播
 - Adapter 边界转换
 
@@ -658,22 +1091,41 @@ Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依
 
 第一版可以从简单文件系统存储开始，但存储必须可替换。
 
-可接受的第一版本地存储结构：
+可接受的本地存储结构：
 
 ```text
 .evotool/
   tools/
-    <tool-id>/
+    <tool-name>/
       manifest.json
       versions/
         v1/
-          tool.py
+          main.py
           README.md
           tests/
       metadata.json
       policy.json
       history.jsonl
       benchmark.jsonl
+
+  libraries/
+    <library-name>/
+      manifest.json
+      versions/
+        v1/
+          source/
+          tests/
+      metadata.json
+      policy.json
+
+  registry/
+    metadata/
+    embeddings/
+    versions/
+    execution_history/
+    dependency_graph/
+    policies/
+    benchmarks/
 ```
 
 规则：
@@ -683,6 +1135,7 @@ Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依
 - 必须保存足够的元数据，以支持未来语义检索和版本管理。
 - 执行历史应使用便于追加写入的格式。
 - 策略、权限和审计记录必须可追踪。
+- Tool 和 Library 的依赖关系必须可查询。
 
 ## 文档要求
 
@@ -697,6 +1150,9 @@ Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依
 - `docs/mcp.md`：MCP Tool 名称、Payload 和示例。
 - `docs/lifecycle.md`：工具生命周期和版本演进策略。
 - `docs/adapters.md`：Eino、OpenHands 等 Adapter 的接入方式。
+- `docs/naming.md`：Tool 和 Library 命名规范。
+- `docs/retrieval.md`：多级检索策略。
+- `docs/dependency-management.md`：Tool/Library 依赖和共享代码复用策略。
 - `docs/roadmap.md`：阶段性实现计划。
 
 文档要务实，优先使用具体例子，少写空泛口号。
@@ -712,9 +1168,12 @@ Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依
 - 创建一个无所不包的 `Manager` 对象。
 - 在简单 Retriever 稳定之前引入向量数据库。
 - 在生成、验证、保存、搜索、执行稳定之前做自动修复。
+- 在相似度检测稳定之前自动重构共享库。
 - 从 Generator 直接执行生成代码。
 - 保存未验证、未审查的高风险工具为 Approved。
 - 让生成工具默认拥有网络、数据库写入或任意文件删除权限。
+- 使用 `tool1.py`、`helper.py` 这类无语义命名。
+- 将多个 Tool 的共享代码复制粘贴而不记录重复。
 - 吞掉失败信息而不记录。
 
 ## 实现优先级
@@ -723,21 +1182,27 @@ Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依
 
 1. 领域模型。
 2. 核心接口。
-3. 文件系统 ToolStore Adapter。
-4. 简单关键词 Retriever。
-5. ToolMemoryService。
-6. 工具生命周期状态。
-7. 安全策略模型。
-8. 一个非常小的本地 Executor，用于可信 Demo Tool。
-9. 验证流程。
-10. 执行历史。
-11. 简单 CLI 或示例 Agent。
-12. Benchmark Runner。
-13. MCP Server Adapter。
-14. Eino 或 OpenHands Adapter。
-15. 语义/向量检索。
-16. 工具版本管理增强。
-17. 失败分析和自动修复。
+3. Tool/Library 命名和 Manifest 规范。
+4. 文件系统 ToolStore Adapter。
+5. 文件系统 LibraryStore Adapter。
+6. 简单关键词 Retriever。
+7. ToolMemoryService。
+8. RegistryService。
+9. 工具生命周期状态。
+10. 安全策略模型。
+11. 一个非常小的本地 Executor，用于可信 Demo Tool。
+12. 验证流程。
+13. 执行历史。
+14. 简单 CLI 或示例 Agent。
+15. Benchmark Runner。
+16. MCP Server Adapter。
+17. Eino 或 OpenHands Adapter。
+18. 语义/向量检索。
+19. Dependency Graph。
+20. 代码相似度检测。
+21. 共享 Library 候选抽取。
+22. 工具版本管理增强。
+23. 失败分析和自动修复。
 
 如果用户要求的改动不符合这个顺序，也要保持改动足够小，并在 PR 或提交信息中说明取舍。
 
@@ -753,6 +1218,7 @@ Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依
 - CLI/示例
 - Benchmark
 - 安全策略
+- Tool/Library 依赖管理
 - MCP 集成
 - Agent 框架 Adapter
 - 文档
