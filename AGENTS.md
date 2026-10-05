@@ -2,7 +2,71 @@
 
 本文档用于约束后续 Coding Agent 在 EvoTool 仓库中的设计和编码行为。任何 Agent 在编写或修改代码前，都应该先阅读并遵守本文档。
 
-EvoTool 是一个面向 AI Agent 的自进化工具记忆系统。它的核心职责是：让 Agent 能够在任务执行过程中保存、检索、验证、执行并复用自己生成过的工具，而不是每次遇到相似任务都重新生成代码。
+EvoTool 的定位是：
+
+> A capability memory layer that allows AI agents to discover, reuse, and evolve generated tools.
+
+中文表达：
+
+> 一个让 Agent 学会积累、复用和演进能力的能力记忆层。
+
+EvoTool 不是简单的 Tool Cache。它的目标是围绕 Agent 生成工具这件事，形成完整闭环：Tool Memory + Benchmark 证明减少 token 和时间 + 安全机制 + Eino/OpenHands Adapter + 完整文档 + 实际案例。
+
+## 项目定位
+
+EvoTool 是一个面向 AI Agent 的能力记忆层。它的核心职责是：让 Agent 能够在任务执行过程中保存、检索、验证、执行并复用自己生成过的工具，而不是每次遇到相似任务都重新生成代码。
+
+必须始终围绕这条主线设计：
+
+```text
+Agent 发现能力缺口
+  -> 生成工具
+  -> 验证工具
+  -> 安全审查
+  -> 保存到 Tool Memory
+  -> 未来语义检索
+  -> 复用工具
+  -> 记录执行效果
+  -> 版本演进或废弃
+```
+
+项目要证明的价值不是“能保存文件”，而是：
+
+- Agent 可以积累能力。
+- 相似任务可以复用已有工具。
+- 重复工具生成次数下降。
+- 任务耗时和 token 成本下降。
+- 生成工具经过验证、安全控制和生命周期管理。
+- 能以 Adapter 方式接入 Eino、OpenHands、MCP 等 Agent 生态。
+
+## 为什么不直接用 Skill
+
+后续实现和文档必须明确回答这个问题：为什么不用已有 Skill 机制？
+
+区别如下：
+
+```yaml
+Skill:
+  creator: 开发者
+  flow: 开发者创建能力 -> Agent 使用能力
+  nature: 人工定义的可复用能力
+
+Learned Tool:
+  creator: Agent
+  flow: Agent 在任务中生成能力 -> 验证后保存 -> 未来 Agent 使用能力
+  nature: Agent 自动产生并演进的可复用能力
+```
+
+Skill 更像人工维护的能力模块。EvoTool 的 Learned Tool 更像 Agent 在任务执行中获得的能力记忆。
+
+因此，EvoTool 不能只做 Skill Registry，也不能只是 Tool Registry。它必须覆盖以下问题：
+
+- 工具为什么被生成？
+- 工具如何验证？
+- 工具是否允许保存？
+- 工具是否允许执行？
+- 未来任务如何检索它？
+- 失败后如何记录、降级、修复或升级？
 
 ## 架构目标
 
@@ -48,6 +112,9 @@ evotool/
       execution.go
       validation.go
       version.go
+      lifecycle.go
+      policy.go
+      benchmark.go
 
     ports/                   # EvoTool 核心拥有的接口定义
       store.go
@@ -57,6 +124,9 @@ evotool/
       executor.go
       sandbox.go
       embedder.go
+      policy.go
+      reviewer.go
+      benchmark.go
       mcp.go
 
     service/                 # 应用服务和用例编排
@@ -64,6 +134,8 @@ evotool/
       learning_service.go
       execution_service.go
       version_service.go
+      policy_service.go
+      benchmark_service.go
 
     adapter/                 # 可替换的基础设施实现
       store/
@@ -80,9 +152,13 @@ evotool/
       sandbox/
         local/
         docker/
+      benchmark/
+        local/
       mcp/
         server/
         client/
+      eino/
+      openhands/
 
     api/                     # 对外门面，供应用、示例、Adapter 使用
       evotool.go
@@ -91,10 +167,17 @@ evotool/
     simple-agent/
     mcp-server/
     eino-adapter/
+    openhands-adapter/
+    pdf-to-excel/
+    webpage-to-markdown/
 
   docs/
     architecture.md
     mcp.md
+    security.md
+    benchmark.md
+    lifecycle.md
+    adapters.md
     roadmap.md
 ```
 
@@ -148,6 +231,8 @@ adapter implementations -> ports/domain
 - Manifest
 - CurrentVersion
 - Versions
+- LifecycleStatus
+- TrustLevel
 - CreatedAt
 - UpdatedAt
 
@@ -166,6 +251,8 @@ adapter implementations -> ports/domain
 - Capabilities
 - Dependencies
 - Tags
+- Permissions
+- ResourceLimits
 
 ### TaskSpec
 
@@ -189,6 +276,7 @@ adapter implementations -> ports/domain
 - Score
 - MatchReason
 - Source
+- RiskSummary
 
 ### GeneratedTool
 
@@ -201,6 +289,7 @@ adapter implementations -> ports/domain
 - Tests
 - Readme
 - Dependencies
+- GenerationReason
 
 ### ValidationResult
 
@@ -213,6 +302,7 @@ adapter implementations -> ports/domain
 - Warnings
 - TestOutput
 - SandboxReport
+- PolicyReport
 
 ### ExecutionResult
 
@@ -228,7 +318,52 @@ adapter implementations -> ports/domain
 - StartedAt
 - FinishedAt
 - Duration
+- TokenUsage
 - Metadata
+
+### ToolLifecycle
+
+表示工具从生成到废弃的状态。
+
+建议状态：
+
+- Draft：刚生成，尚未验证。
+- Validated：验证通过，但尚未人工或策略批准。
+- Approved：允许被自动检索和执行。
+- Quarantined：发现风险或多次失败，暂停使用。
+- Deprecated：已有更好版本，不再推荐。
+- Deleted：被移除。
+
+### ToolPolicy
+
+表示工具的权限、安全和资源限制。
+
+建议字段：
+
+- AllowedPaths
+- DeniedPaths
+- NetworkPolicy
+- MaxRuntime
+- MaxMemory
+- MaxOutputSize
+- AllowedCommands
+- DeniedCommands
+- RequiresReview
+
+### BenchmarkResult
+
+表示 EvoTool 对任务成本和复用效果的评估结果。
+
+建议指标：
+
+- TotalTasks
+- ToolGeneratedCount
+- ToolReusedCount
+- DuplicateGenerationCount
+- AverageLatency
+- AverageTokenUsage
+- SuccessRate
+- FailureRate
 
 ## 核心接口
 
@@ -262,6 +397,18 @@ type ToolExecutor interface {
 type ExecutionRecorder interface {
     RecordExecution(ctx context.Context, result domain.ExecutionResult) error
 }
+
+type PolicyEngine interface {
+    Evaluate(ctx context.Context, tool domain.Tool, task domain.TaskSpec) (domain.PolicyDecision, error)
+}
+
+type ToolReviewer interface {
+    Review(ctx context.Context, tool domain.GeneratedTool) (domain.ReviewResult, error)
+}
+
+type BenchmarkRunner interface {
+    Run(ctx context.Context, suite domain.BenchmarkSuite) (domain.BenchmarkResult, error)
+}
 ```
 
 不要创建巨大的接口。如果某个实现并不自然需要接口中的所有方法，就拆分接口。
@@ -274,17 +421,133 @@ type ExecutionRecorder interface {
 TaskSpec
   -> 搜索 learned tools
   -> 如果找到匹配工具：
+       执行安全策略检查
        执行工具
        记录执行结果
   -> 如果没有找到匹配工具：
        生成工具
        在沙箱中验证工具
+       执行安全策略检查
        保存工具和元数据
        执行工具
        记录执行结果
 ```
 
 不要一开始就做自动修复、分布式执行、多 Agent 协作。那些属于后续阶段。
+
+## Benchmark 要求
+
+EvoTool 必须通过 Benchmark 证明它的价值。不能只说“更智能”或“更高效”。
+
+Benchmark 需要比较至少两组：
+
+```text
+Baseline：没有 Tool Memory，每次由 Agent 重新生成工具。
+EvoTool：先检索 Tool Memory，找不到才生成工具。
+```
+
+必须记录的指标：
+
+- 工具生成次数
+- 重复工具生成次数
+- 工具复用次数
+- 平均任务耗时
+- 平均 token 使用量
+- 成功率
+- 失败率
+- 因安全策略被拦截的执行次数
+
+README、docs 和示例中可以使用类似表达：
+
+```text
+EvoTool reduces redundant tool generation and enables agents to accumulate reusable capabilities across tasks.
+```
+
+但真正进入稳定版本前，必须用可复现实验数据支持这个结论。
+
+## 安全要求
+
+安全是 EvoTool 的核心问题之一，不是附加功能。
+
+危险示例：
+
+```text
+Agent 自动生成 delete_database.py
+  -> 工具被保存
+  -> 下次用户说“清理数据”
+  -> Agent 误调用该工具
+  -> 造成破坏性后果
+```
+
+因此，生成出来的工具在验证和策略批准之前都必须被视为不可信。
+
+必须支持或预留以下安全机制：
+
+- Sandbox：生成工具必须通过沙箱执行边界。
+- Permission：工具必须声明权限，运行前必须检查权限。
+- Review：高风险工具必须进入人工或策略审查流程。
+- Execution Limit：必须限制执行时间、内存、输出大小和文件访问范围。
+- Dependency Isolation：工具依赖必须隔离安装或隔离解析，不能污染宿主环境。
+- Audit Log：工具生成、验证、执行、失败、升级都必须可追踪。
+
+安全规则：
+
+- 生成代码不能绕过 Validator 和 Executor 直接执行。
+- 默认情况下，生成工具不能访问任意宿主机路径。
+- 除非配置显式允许，否则不能把密钥传给生成工具。
+- 沙箱策略必须显式表达。
+- 必须记录足够的执行元数据，方便排查失败。
+- 生成工具声明的依赖必须视为不可信输入。
+- 涉及删除、覆盖、网络请求、数据库写入、系统命令的工具默认需要 Review。
+
+第一版 MVP 可以先使用本地 Executor，但架构上必须允许之后替换成 Docker 或其他沙箱实现。
+
+## Tool Lifecycle 要求
+
+EvoTool 不能只保存工具代码，还必须管理工具生命周期。
+
+需要回答的问题：谁负责维护 Agent 生成出来的工具？
+
+例如：
+
+```yaml
+pdf_to_excel:v1
+```
+
+一年以后可能出现：
+
+- Python 版本升级。
+- 依赖包失效。
+- 新 PDF 格式不兼容。
+- 原工具安全策略不再满足。
+- 有更好的 v2 版本。
+
+因此，工具必须有生命周期和版本管理。
+
+建议流程：
+
+```text
+Generate v1
+  -> Validate
+  -> Approve
+  -> Execute
+  -> Record success/failure
+  -> Detect repeated failures
+  -> Quarantine or Repair
+  -> Generate v2
+  -> Validate v2
+  -> Promote v2 as current
+  -> Deprecate v1
+```
+
+实现要求：
+
+- 每个工具必须有版本。
+- 当前版本必须显式标记。
+- 执行历史必须记录版本号。
+- 多次失败的工具不能继续被静默复用。
+- 高风险工具不能自动升级为 Approved。
+- 依赖变更必须进入验证流程。
 
 ## MCP 要求
 
@@ -310,6 +573,8 @@ internal/adapter/mcp/
 - `evotool.save_tool`
 - `evotool.execute_tool`
 - `evotool.record_execution`
+- `evotool.review_tool`
+- `evotool.run_benchmark`
 
 MCP 实现规则：
 
@@ -332,6 +597,27 @@ EvoTool 后续可以为 Eino、OpenHands、LangChain、自定义 ReAct Agent 等
 - 如果未来需要公开 Adapter，再考虑移动到 `pkg/adapter/<framework>`。
 - 框架 Adapter 负责把框架概念转换成 EvoTool 概念。
 - EvoTool 核心必须能被普通 Go 程序直接使用，不依赖任何 Agent 框架。
+
+Eino/OpenHands Adapter 的价值在于证明 EvoTool 能进入真实 Agent 生态，而不是只停留在 demo。
+
+## 实际案例要求
+
+EvoTool 必须有实际案例。案例要能体现“先生成、再复用、再记录效果”。
+
+优先案例：
+
+- PDF 表格提取为 Excel。
+- 网页内容转换为 Markdown。
+- CSV 数据统计分析。
+- 项目日志分析。
+- 多 API 数据聚合生成报告。
+
+每个案例至少包含：
+
+- 第一次任务：没有工具，生成并验证工具。
+- 第二次任务：检索并复用工具。
+- Benchmark：对比是否减少生成次数、耗时和 token。
+- 安全策略：说明工具获得了哪些权限、被限制了哪些行为。
 
 ## Go 代码规范
 
@@ -357,28 +643,16 @@ EvoTool 后续可以为 Eino、OpenHands、LangChain、自定义 ReAct Agent 等
 - 工具搜索决策逻辑
 - 保存和读取行为
 - 验证成功/失败行为
+- 安全策略允许/拒绝行为
+- 生命周期状态流转
 - 执行结果记录
+- Benchmark 指标计算
 - 错误传播
 - Adapter 边界转换
 
 Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依赖 Docker、网络、付费 API 或外部服务。
 
 如果集成测试需要外部服务，必须明确标记，并保持可选。
-
-## 安全要求
-
-生成出来的工具在验证之前都应该被视为不可信。
-
-规则：
-
-- 生成代码不能绕过 Validator 和 Executor 直接执行。
-- 默认情况下，生成工具不能访问任意宿主机路径。
-- 除非配置显式允许，否则不能把密钥传给生成工具。
-- 沙箱策略必须显式表达。
-- 必须记录足够的执行元数据，方便排查失败。
-- 生成工具声明的依赖必须视为不可信输入。
-
-第一版 MVP 可以先使用本地 Executor，但架构上必须允许之后替换成 Docker 或其他沙箱实现。
 
 ## 持久化要求
 
@@ -397,7 +671,9 @@ Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依
           README.md
           tests/
       metadata.json
+      policy.json
       history.jsonl
+      benchmark.jsonl
 ```
 
 规则：
@@ -406,6 +682,7 @@ Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依
 - 文件系统细节放在 Store Adapter 中。
 - 必须保存足够的元数据，以支持未来语义检索和版本管理。
 - 执行历史应使用便于追加写入的格式。
+- 策略、权限和审计记录必须可追踪。
 
 ## 文档要求
 
@@ -413,9 +690,13 @@ Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依
 
 重要文档：
 
-- `README.md`：项目定位和快速开始。
+- `README.md`：项目定位、核心价值和快速开始。
 - `docs/architecture.md`：架构和设计决策。
+- `docs/security.md`：安全模型、权限、沙箱和审查流程。
+- `docs/benchmark.md`：Benchmark 方法、指标和结果。
 - `docs/mcp.md`：MCP Tool 名称、Payload 和示例。
+- `docs/lifecycle.md`：工具生命周期和版本演进策略。
+- `docs/adapters.md`：Eino、OpenHands 等 Adapter 的接入方式。
 - `docs/roadmap.md`：阶段性实现计划。
 
 文档要务实，优先使用具体例子，少写空泛口号。
@@ -432,6 +713,8 @@ Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依
 - 在简单 Retriever 稳定之前引入向量数据库。
 - 在生成、验证、保存、搜索、执行稳定之前做自动修复。
 - 从 Generator 直接执行生成代码。
+- 保存未验证、未审查的高风险工具为 Approved。
+- 让生成工具默认拥有网络、数据库写入或任意文件删除权限。
 - 吞掉失败信息而不记录。
 
 ## 实现优先级
@@ -443,15 +726,18 @@ Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依
 3. 文件系统 ToolStore Adapter。
 4. 简单关键词 Retriever。
 5. ToolMemoryService。
-6. 一个非常小的本地 Executor，用于可信 Demo Tool。
-7. 验证流程。
-8. 执行历史。
-9. 简单 CLI 或示例 Agent。
-10. MCP Server Adapter。
-11. Eino 或其他框架 Adapter。
-12. 语义/向量检索。
-13. 工具版本管理。
-14. 失败分析和自动修复。
+6. 工具生命周期状态。
+7. 安全策略模型。
+8. 一个非常小的本地 Executor，用于可信 Demo Tool。
+9. 验证流程。
+10. 执行历史。
+11. 简单 CLI 或示例 Agent。
+12. Benchmark Runner。
+13. MCP Server Adapter。
+14. Eino 或 OpenHands Adapter。
+15. 语义/向量检索。
+16. 工具版本管理增强。
+17. 失败分析和自动修复。
 
 如果用户要求的改动不符合这个顺序，也要保持改动足够小，并在 PR 或提交信息中说明取舍。
 
@@ -465,6 +751,10 @@ Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依
 - 基础设施 Adapter
 - API 门面
 - CLI/示例
+- Benchmark
+- 安全策略
+- MCP 集成
+- Agent 框架 Adapter
 - 文档
 
 然后把改动限制在对应层内。只有当边界确实需要配套调整时，才允许小范围修改其他层。
