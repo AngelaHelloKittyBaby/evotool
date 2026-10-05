@@ -1,0 +1,49 @@
+﻿# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Go build artifacts
+bin/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+
+# Python artifacts for generated tools and experiments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Node artifacts, if adapters or demos use TypeScript/JavaScript later
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# EvoTool local runtime data
+.evotool/
+tool_memory/
+sandbox/
+tmp/
