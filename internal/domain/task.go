@@ -12,13 +12,14 @@ type TaskSpec struct {
 
 // ToolCandidate 表示一次检索得到的候选工具及其匹配信息。
 type ToolCandidate struct {
-	Tool                  Tool
-	Score                 float64
-	MatchReason           string
-	Source                RetrievalSource
-	RiskSummary           string
-	DependencyHealth      DependencyHealthStatus
-	HistoricalSuccessRate float64
+	Tool             Tool
+	Score            float64
+	RankScore        CapabilityRankScore
+	UsageStats       ToolUsageStats
+	MatchReason      string
+	Source           RetrievalSource
+	RiskSummary      string
+	DependencyHealth DependencyHealthStatus
 }
 
 // GeneratedTool 表示刚生成、尚未进入可信工具记忆的新工具。

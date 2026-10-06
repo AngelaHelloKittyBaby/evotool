@@ -12,6 +12,7 @@ type Tool struct {
 	CurrentVersion  string
 	Versions        []ToolVersion
 	Dependencies    []DependencyRef
+	UsageStats      ToolUsageStats
 	LifecycleStatus LifecycleStatus
 	TrustLevel      TrustLevel
 	CreatedAt       time.Time
@@ -27,10 +28,14 @@ type ToolManifest struct {
 	EntryPoint     string
 	Inputs         []Parameter
 	Outputs        []Parameter
+	InputSchema    map[string]any
+	OutputSchema   map[string]any
 	Capabilities   []string
 	Dependencies   []DependencyRef
 	LibraryRefs    []DependencyRef
 	Tags           []string
+	Examples       []ManifestExample
+	Environment    EnvironmentSpec
 	Permissions    PermissionSet
 	ResourceLimits ResourceLimits
 }
@@ -48,6 +53,21 @@ type Parameter struct {
 	Type        string
 	Description string
 	Required    bool
+}
+
+// ManifestExample 描述工具或 Library 的典型使用样例，用于检索和文档。
+type ManifestExample struct {
+	Input       string
+	Output      string
+	Description string
+}
+
+// EnvironmentSpec 描述能力运行所需的环境约束。
+type EnvironmentSpec struct {
+	Runtime string
+	Network bool
+	OS      string
+	Arch    string
 }
 
 // SourceFile 表示一个生成工具中的源码、测试或文档文件。

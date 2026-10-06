@@ -112,24 +112,34 @@ Good names improve retrieval because future agents search by intent, description
 
 ## Retrieval Strategy
 
-EvoTool should not rely on tool names alone. Retrieval should combine:
-
-- Capability category
-- Semantic embeddings
-- Metadata filters, such as input, output, domain, and runtime
-- Safety policy status
-- Dependency health
-- Execution history, success rate, and usage count
-
-Example:
+EvoTool should not rely on tool names alone or send every tool to an LLM. Retrieval is staged:
 
 ```text
-Task: Analyze customer feedback sentiment and generate a report
-  -> Categories: NLP, Data Analysis, Report Generation
-  -> Metadata: input=csv, output=markdown
-  -> Prefer tools with higher success rate and healthy dependencies
+User Task
+  -> Intent Extraction
+  -> Semantic Retrieval, for example 20,000 tools to 50 candidates
+  -> Metadata Filter, for example 50 candidates to 10 candidates
+  -> Capability Rank, for example 10 candidates to 3 candidates
+  -> LLM or rule selection, final 1 tool
 ```
 
+Tool embeddings should be built from:
+
+```text
+name + description + tags + input/output schema + examples + capabilities
+```
+
+Ranking should combine:
+
+- Semantic similarity
+- Success rate
+- Reliability
+- Average latency
+- Usage history
+- Environment match
+- Dependency health
+
+This means EvoTool should know not only which tool is similar, but which tool is more reliable.
 ## What EvoTool Aims To Provide
 
 - Tool Memory for generated tools
@@ -138,7 +148,7 @@ Task: Analyze customer feedback sentiment and generate a report
 - Benchmarking to prove reduced token usage and task latency
 - Safety mechanisms, including sandboxing, permissions, review, execution limits, and dependency isolation
 - MCP integration for agent ecosystems
-- Eino/OpenHands adapters
+- Eino adapter first, then OpenHands adapter
 - Complete documentation and reproducible examples
 - Real task cases such as PDF-to-Excel, webpage-to-Markdown, CSV analysis, and report generation
 
@@ -182,19 +192,19 @@ Key metrics:
 - Tool and Library manifests
 - Core ports and services
 - Filesystem ToolStore and LibraryStore
-- Keyword-based retrieval
+- Semantic retrieval with metadata filtering and capability ranking
 - Registry and dependency graph
 - Validation and execution history
 - Safety policy model
 - Benchmark runner
 - MCP server adapter
-- Eino/OpenHands adapters
+- Eino adapter first, then OpenHands adapter
 - Semantic/vector retrieval
-- Code similarity detection
-- Shared library extraction candidates
+- Dependency graph`r`n- Code similarity detection`r`n- Shared library extraction candidates
 - Tool versioning and lifecycle management
 - Failure analysis and automatic repair
 
 ## License
 
 MIT License.
+

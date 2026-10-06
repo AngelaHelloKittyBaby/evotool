@@ -529,58 +529,99 @@ pdf_summary.extract_table
 
 注意：自动抽取 Shared Library 是第二阶段能力。MVP 可以先记录重复代码和相似度，不要直接自动重构生产工具。
 
-## 多级检索要求
+## 多阶段检索要求
 
-工具检索不能只搜索 Tool 名字。
+工具检索必须分阶段完成，不能把全部工具都交给 LLM。
 
-必须支持或预留多级检索：
+禁止设计：
 
 ```text
 用户任务
-  -> 能力分类召回
-  -> Embedding 语义召回
-  -> Metadata 过滤
-  -> 安全策略过滤
-  -> 依赖状态过滤
-  -> 执行历史排序
-  -> LLM 或规则最终选择
+  -> 把 10000 个工具全部塞给 LLM
+  -> 让 LLM 自己挑
+```
+
+推荐设计：
+
+```text
+                 User Task
+                     |
+                     v
+              Intent Extraction
+                     |
+                     v
+             Semantic Retrieval
+                     |
+                  Top-K
+                     |
+                     v
+             Metadata Filter
+                     |
+                     v
+              Capability Rank
+                     |
+                     v
+               LLM Selection
+                     |
+                     v
+                   Tool
 ```
 
 示例：
 
-用户任务：
+```text
+20,000 tools
+  -> semantic retrieval
+  -> 50 candidates
+  -> input/output/type/permission/environment filter
+  -> 10 candidates
+  -> success rate + usage count + latency + version ranking
+  -> 3 candidates
+  -> LLM or rule selection
+  -> 1 tool
+```
+
+检索阶段职责：
+
+- Intent Extraction：从任务中提取 intent、input、output、domain、environment、constraints。
+- Semantic Retrieval：基于 manifest embedding 做大规模召回。
+- Metadata Filter：按 input/output schema、runtime、权限、环境、依赖状态过滤。
+- Capability Rank：根据使用经验和可靠性进行排序。
+- LLM Selection：只把少量高质量候选交给 LLM 或规则选择器。
+
+Embedding 不能只基于工具名字。Embedding 文本应该主要由以下内容组合：
 
 ```text
-分析用户评论情绪，然后生成报告
+name
++ description
++ tags
++ input/output schema
++ examples
++ capabilities
 ```
 
-候选能力分类：
+排序不能只看语义相似度。最终分数应该综合：
 
 ```text
-NLP
-Data Analysis
-Report Generation
+Score =
+  semantic_similarity
+  + success_rate
+  + reliability
+  + latency
+  + usage_history
+  + environment_match
 ```
 
-Metadata 过滤示例：
-
-```json
-{
-  "input": "csv",
-  "output": "markdown",
-  "domain": "customer_feedback"
-}
-```
-
-执行历史排序示例：
+示例：
 
 ```text
-tool A: success_rate 98%, usage_count 500
-tool B: success_rate 50%, usage_count 3
+Tool A: similarity 0.91, success_rate 99%, average_latency 1.2s, usage_count 1200
+Tool B: similarity 0.95, success_rate 72%, average_latency 4.8s, usage_count 15
 ```
 
-在其他条件接近时，优先选择成功率高、使用次数多、最近验证通过、依赖健康的工具。
+不能因为 B 的相似度更高就直接选 B。EvoTool 要做到：不仅知道“哪个工具像”，还知道“哪个工具更可靠”。
 
+在其他条件接近时，优先选择成功率高、使用次数多、最近验证通过、依赖健康、环境匹配、风险更低的工具。
 ## Registry 要求
 
 Registry 是 EvoTool 的能力目录，不只是一个文件列表。
@@ -922,6 +963,7 @@ registry/
 - 运行 benchmark suite。
 - 对比 baseline 和 EvoTool 模式。
 - 统计 token、耗时、复用次数、失败率、安全拦截次数。
+
 ## 核心接口
 
 核心接口统一放在 `internal/ports` 中。接口要小而专注，避免大而全。
@@ -929,6 +971,26 @@ registry/
 接口设计方向示例：
 
 ```go
+type IntentExtractor interface {
+    Extract(ctx context.Context, task domain.TaskSpec) (domain.RetrievalQuery, error)
+}
+
+type ToolRetriever interface {
+    Retrieve(ctx context.Context, query domain.RetrievalQuery) (domain.RetrievalResult, error)
+}
+
+type CapabilityRanker interface {
+    Rank(ctx context.Context, query domain.RetrievalQuery, candidates []domain.ToolCandidate) ([]domain.ToolCandidate, error)
+}
+
+type ToolSelector interface {
+    Select(ctx context.Context, task domain.TaskSpec, candidates []domain.ToolCandidate) (domain.ToolCandidate, error)
+}
+
+type LibraryRetriever interface {
+    SearchLibraries(ctx context.Context, query domain.RetrievalQuery) ([]domain.LibraryCandidate, error)
+}
+
 type ToolStore interface {
     Save(ctx context.Context, tool domain.Tool) error
     Get(ctx context.Context, id string) (domain.Tool, error)
@@ -941,49 +1003,16 @@ type LibraryStore interface {
     Update(ctx context.Context, library domain.Library) error
 }
 
-type ToolRetriever interface {
-    Search(ctx context.Context, query domain.RetrievalQuery) ([]domain.ToolCandidate, error)
-}
-
 type ToolGenerator interface {
     Generate(ctx context.Context, task domain.TaskSpec) (domain.GeneratedTool, error)
-}
-
-type ToolValidator interface {
-    Validate(ctx context.Context, tool domain.GeneratedTool) (domain.ValidationResult, error)
 }
 
 type ToolExecutor interface {
     Execute(ctx context.Context, tool domain.Tool, input map[string]any) (domain.ExecutionResult, error)
 }
-
-type ExecutionRecorder interface {
-    RecordExecution(ctx context.Context, result domain.ExecutionResult) error
-}
-
-type DependencyResolver interface {
-    Resolve(ctx context.Context, tool domain.Tool) (domain.DependencyGraph, error)
-}
-
-type SimilarityDetector interface {
-    Detect(ctx context.Context, files []domain.SourceFile) ([]domain.SimilarityReport, error)
-}
-
-type PolicyEngine interface {
-    Evaluate(ctx context.Context, tool domain.Tool, task domain.TaskSpec) (domain.PolicyDecision, error)
-}
-
-type ToolReviewer interface {
-    Review(ctx context.Context, tool domain.GeneratedTool) (domain.ReviewResult, error)
-}
-
-type BenchmarkRunner interface {
-    Run(ctx context.Context, suite domain.BenchmarkSuite) (domain.BenchmarkResult, error)
-}
 ```
 
 不要创建巨大的接口。如果某个实现并不自然需要接口中的所有方法，就拆分接口。
-
 ## MVP 主流程
 
 第一版稳定 MVP 应该先实现以下闭环：
@@ -1018,17 +1047,16 @@ EvoTool 至少有四条核心流程。后续代码必须围绕这些流程拆分
 
 ```text
 TaskSpec
-  -> Normalize intent
+  -> Intent Extraction
   -> Build RetrievalQuery
-  -> Search Registry
-  -> Retrieve Tool candidates
-  -> Filter by metadata
-  -> Filter by policy
+  -> Semantic Retrieval, large-scale recall
+  -> Metadata Filter
+  -> Capability Rank
+  -> LLM or rule Selection
   -> Check dependency health
-  -> Rank by score + success history
-  -> Select Tool
+  -> Policy Check
   -> Execute Tool
-  -> Record ExecutionResult
+  -> Record ExecutionResult and usage stats
 ```
 
 如果找到合适工具，就不再重新生成工具。
@@ -1038,34 +1066,36 @@ TaskSpec
 ```text
 TaskSpec
   -> Capability gap detected
-  -> Generate tool source
-  -> Generate manifest
-  -> Validate naming and manifest
-  -> Detect reusable libraries
-  -> Validate generated tool
-  -> Run policy check
+  -> Tool Generator
+  -> Dependency Analysis
+  -> Search Library first
+  -> If library found: reuse
+  -> If library missing: create candidate library only when needed
+  -> Generate tool source and manifest
+  -> Validate naming, schema, dependencies, and tests
+  -> Policy Check
   -> Review if high risk
-  -> Save Tool
-  -> Update Registry
+  -> Save Tool / Library
+  -> Update Registry and Dependency Graph
   -> Execute Tool
-  -> Record ExecutionResult
+  -> Record ExecutionResult and usage stats
 ```
 
-这条链路是 EvoTool 的核心价值：Agent 不只是完成任务，还把本次任务中产生的新能力沉淀下来。
+第一版重点是生成 Tool 前先搜索已有 Library，而不是生成之后立刻自动重构已有代码。
 
 ### Library 复用流程
 
 ```text
-GeneratedTool
-  -> Analyze imports and helper functions
-  -> Search existing Libraries
-  -> Match by category, description, exports, embedding
-  -> Reuse Library if compatible
+Generate Tool
+  -> Dependency Analysis
+  -> Search Library
+  -> If found: reuse Library
+  -> If not found: create Library candidate
+  -> Validate dependent Tool with resolved dependencies
   -> Record Tool -> Library dependency
-  -> Validate Tool with resolved dependencies
 ```
 
-MVP 阶段可以只做“发现并记录可复用 Library”。自动抽取共享库属于第二阶段。
+MVP 阶段可以只做“生成前搜索并复用 Library”。已有 Tool 之间的自动 Library Extraction 属于第二阶段。
 
 ### 生命周期演进流程
 
@@ -1075,14 +1105,14 @@ Tool v1
   -> Record success/failure
   -> Detect repeated failures
   -> Quarantine if unhealthy
-  -> Generate or repair v2
+  -> Generate or repair v2 later
   -> Validate v2
   -> Policy check
   -> Promote v2 as current
   -> Deprecate v1
 ```
 
-Library 也必须有生命周期。Library 升级后，依赖它的 Tool 必须重新验证。
+第一版不做自动修复。失败只需要被记录、统计、影响排序，并为后续 Evolution 留接口。
 ## Benchmark 要求
 
 EvoTool 必须通过 Benchmark 证明它的价值。不能只说“更智能”或“更高效”。
@@ -1404,42 +1434,42 @@ Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依
 
 ## MVP 边界
 
-第一版 MVP 不要试图一次做完完整能力生态。
+第一版不要碰自动代码重构和自动修复。先把能力注册、检索、依赖、复用和真实接入做扎实。
 
-MVP 必须完成：
+第一版必须完成：
 
-1. 领域模型。
-2. Tool Manifest。
-3. Library Manifest 的基础模型。
-4. 文件系统 ToolStore。
-5. 文件系统 LibraryStore。
-6. 简单 Registry metadata。
-7. 简单关键词检索。
-8. ToolMemoryService。
-9. ExecutionResult 记录。
+1. Tool Registry。
+2. Library Registry。
+3. Tool / Library Manifest。
+4. Semantic Retrieval 基础能力。
+5. Metadata Filter。
+6. Capability Rank，至少包含 similarity、success_rate、latency、usage_count、environment_match。
+7. Dependency Graph。
+8. 生成 Tool 前先搜索已有 Library。
+9. ExecutionResult 和 ToolUsageStats 记录。
 10. 基础安全策略模型。
 11. 一个本地可信 Demo Executor。
 12. 一个实际案例。
+13. Eino Adapter 的最小可运行版本。
 
-MVP 暂时不做：
+第一版明确不做：
 
+- 自动代码重构。
+- 自动 Library Extraction。
 - 自动修复。
-- 自动抽取公共库。
 - 分布式沙箱。
-- 复杂向量数据库。
-- 完整 Eino/OpenHands 合并级 Adapter。
+- 复杂多租户权限系统。
 - 多 Agent 协作。
 
 第二阶段再做：
 
-- Embedding 检索。
-- Hybrid Retriever。
-- Dependency Graph。
 - Code Similarity Detection。
 - Shared Library 候选抽取。
+- 自动重构建议。
 - Docker Sandbox。
 - MCP Server。
-- Eino/OpenHands Adapter。
+- OpenHands Adapter。
+- 失败分析和自动修复。
 ## 实现优先级
 
 按以下顺序推进：
@@ -1447,29 +1477,29 @@ MVP 暂时不做：
 1. 领域模型。
 2. 核心接口。
 3. Tool/Library 命名和 Manifest 规范。
-4. 文件系统 ToolStore Adapter。
-5. 文件系统 LibraryStore Adapter。
-6. 简单关键词 Retriever。
-7. ToolMemoryService。
-8. RegistryService。
-9. 工具生命周期状态。
-10. 安全策略模型。
-11. 一个非常小的本地 Executor，用于可信 Demo Tool。
-12. 验证流程。
-13. 执行历史。
-14. 简单 CLI 或示例 Agent。
-15. Benchmark Runner。
-16. MCP Server Adapter。
-17. Eino 或 OpenHands Adapter。
-18. 语义/向量检索。
-19. Dependency Graph。
-20. 代码相似度检测。
-21. 共享 Library 候选抽取。
-22. 工具版本管理增强。
-23. 失败分析和自动修复。
+4. Tool Registry。
+5. Library Registry。
+6. Semantic Retrieval 基础能力。
+7. Metadata Filter。
+8. Capability Rank。
+9. Dependency Graph。
+10. ToolMemoryService。
+11. RegistryService。
+12. 安全策略模型。
+13. 一个非常小的本地 Executor，用于可信 Demo Tool。
+14. 验证流程。
+15. 执行历史和 ToolUsageStats。
+16. 简单 CLI 或示例 Agent。
+17. Benchmark Runner。
+18. Eino Adapter。
+19. MCP Server Adapter。
+20. OpenHands Adapter。
+21. 代码相似度检测。
+22. 共享 Library 候选抽取。
+23. 工具版本管理增强。
+24. 失败分析和自动修复。
 
 如果用户要求的改动不符合这个顺序，也要保持改动足够小，并在 PR 或提交信息中说明取舍。
-
 ## 给 Coding Agent 的最终规则
 
 写代码前，必须先判断当前改动属于哪一层：
@@ -1488,5 +1518,6 @@ MVP 暂时不做：
 - 文档
 
 然后把改动限制在对应层内。只有当边界确实需要配套调整时，才允许小范围修改其他层。
+
 
 
