@@ -6,6 +6,23 @@ A capability memory layer that allows AI agents to discover, reuse, and evolve g
 
 EvoTool helps AI agents turn one-off generated scripts into validated, searchable, reusable, and evolvable capabilities. Instead of regenerating the same helper code for similar tasks, an agent can build a capability memory and reuse proven tools and shared libraries across future work.
 
+## Quick Start
+
+Save a demo generated tool into local capability memory:
+
+```bash
+go run ./cmd/evotool demo save-tool --root .evotool
+```
+
+This creates a local structure like:
+
+```text
+.evotool/
+  tools/pdf_to_excel/
+  registry/metadata/tools/pdf_to_excel.json
+  registry/audit/events.jsonl
+```
+
 ## Status
 
 EvoTool is in the early design and MVP stage.
@@ -207,4 +224,6 @@ Key metrics:
 ## License
 
 MIT License.
+
+
 
