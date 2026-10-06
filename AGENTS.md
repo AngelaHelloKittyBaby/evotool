@@ -16,7 +16,65 @@ EvoTool 不是简单的 Tool Cache。它的目标是围绕 Agent 生成工具这
 
 EvoTool 应该被设计成 Agent Capability Memory，而不是单纯的工具文件夹。
 
-核心框架分为三层：
+整个系统分为五层：
+
+```text
++------------------------------------------------------------------+
+| External Agent Runtime                                           |
+|                                                                  |
+|  Custom Agent / ReAct / Eino / OpenHands / MCP Client / CLI      |
++-----------------------------------+------------------------------+
+                                    |
+                                    v
++------------------------------------------------------------------+
+| EvoTool API / Facade                                             |
+|                                                                  |
+|  LearnTool()  SearchTools()  ExecuteTool()  RecordExecution()    |
++-----------------------------------+------------------------------+
+                                    |
+                                    v
++------------------------------------------------------------------+
+| Application Services                                             |
+|                                                                  |
+|  CapabilityMemoryService                                         |
+|  RetrievalService                                                |
+|  LearningService                                                 |
+|  ValidationService                                               |
+|  ExecutionService                                                |
+|  PolicyService                                                   |
+|  LifecycleService                                                |
+|  BenchmarkService                                                |
++-----------------------------------+------------------------------+
+                                    |
+                                    v
++------------------------------------------------------------------+
+| Ports                                                            |
+|                                                                  |
+|  ToolStore             LibraryStore          RegistryStore       |
+|  ToolRetriever         Embedder              SimilarityDetector  |
+|  ToolGenerator         ToolValidator         ToolExecutor        |
+|  Sandbox               PolicyEngine          Reviewer            |
+|  DependencyResolver    BenchmarkRunner       AuditLogger         |
++-----------------------------------+------------------------------+
+                                    |
+                                    v
++------------------------------------------------------------------+
+| Adapters                                                         |
+|                                                                  |
+|  filesystem / sqlite / vector db / docker / local sandbox        |
+|  openai generator / python executor / mcp server / eino adapter  |
++------------------------------------------------------------------+
+```
+
+五层职责：
+
+- External Agent Runtime：外部 Agent 运行时，例如自定义 ReAct Agent、Eino、OpenHands、MCP Client、CLI。
+- EvoTool API / Facade：对外暴露简单稳定的能力接口，例如学习工具、检索工具、执行工具、记录结果。
+- Application Services：业务用例编排层，负责检索、学习、验证、执行、安全、生命周期和 Benchmark。
+- Ports：核心接口层，定义 EvoTool 需要的存储、检索、生成、执行、沙箱、安全、审计等能力。
+- Adapters：外部技术适配层，接入文件系统、SQLite、向量数据库、Docker、MCP、Eino、OpenHands、LLM SDK 等。
+
+能力记忆内部再分为三层：
 
 ```text
 Agent Capability Memory
@@ -30,7 +88,7 @@ Agent Capability Memory
 
 - Tool 层：表示 Agent 可以直接调用的能力，例如 `pdf_to_excel`、`csv_analyzer`、`report_generator`。
 - Library 层：表示多个 Tool 共享的底层能力，例如 `pdf_parser`、`excel_writer`、`text_processor`。
-- Registry 层：表示能力目录和检索中心，保存 metadata、embedding、version、execution_history、dependency_graph、policy 等信息。
+- Registry 层：表示能力目录和检索中心，保存 metadata、embedding、version、execution_history、dependency_graph、policy、benchmark 等信息。
 
 关系示意：
 
@@ -142,14 +200,15 @@ EvoTool 必须设计成与具体 Agent 框架无关的基础设施库。
 ```text
 evotool/
   cmd/
-    evotool/                 # CLI 入口
+    evotool/                       # CLI 入口
 
   internal/
-    domain/                  # 核心领域对象和领域规则
+    domain/                        # 领域模型
       tool.go
       library.go
       manifest.go
       task.go
+      retrieval.go
       execution.go
       validation.go
       version.go
@@ -160,8 +219,10 @@ evotool/
       dependency.go
       similarity.go
 
-    ports/                   # EvoTool 核心拥有的接口定义
+    ports/                         # 核心接口
       store.go
+      library_store.go
+      registry.go
       retriever.go
       generator.go
       validator.go
@@ -171,24 +232,25 @@ evotool/
       policy.go
       reviewer.go
       benchmark.go
-      registry.go
-      library_store.go
       dependency_resolver.go
       similarity_detector.go
+      audit.go
       mcp.go
 
-    service/                 # 应用服务和用例编排
-      memory_service.go
+    service/                       # 业务用例编排
+      capability_memory_service.go
+      retrieval_service.go
       learning_service.go
+      validation_service.go
       execution_service.go
-      version_service.go
       policy_service.go
+      lifecycle_service.go
       benchmark_service.go
       registry_service.go
       library_service.go
       dependency_service.go
 
-    adapter/                 # 可替换的基础设施实现
+    adapter/                       # 外部技术实现
       store/
         filesystem/
         sqlite/
@@ -204,18 +266,18 @@ evotool/
       sandbox/
         local/
         docker/
-      benchmark/
-        local/
       similarity/
         ast/
         embedding/
+      benchmark/
+        local/
       mcp/
         server/
         client/
       eino/
       openhands/
 
-    api/                     # 对外门面，供应用、示例、Adapter 使用
+    api/                           # 对外门面
       evotool.go
 
   examples/
@@ -228,9 +290,9 @@ evotool/
 
   docs/
     architecture.md
-    mcp.md
     security.md
     benchmark.md
+    mcp.md
     lifecycle.md
     adapters.md
     naming.md
@@ -238,7 +300,6 @@ evotool/
     dependency-management.md
     roadmap.md
 ```
-
 不要在一开始就创建所有目录。随着功能真实出现，再逐步扩展结构。
 
 ## 依赖规则
@@ -769,6 +830,98 @@ registry/
 - SuccessRate
 - FailureRate
 
+## 核心服务职责
+
+### CapabilityMemoryService
+
+统一对外提供能力记忆操作。
+
+职责：
+
+- 搜索能力。
+- 保存能力。
+- 查询能力详情。
+- 记录执行结果。
+- 协调 Tool 和 Library。
+
+### RetrievalService
+
+负责多级检索。
+
+职责：
+
+- 构造检索请求。
+- 执行 category / keyword / embedding 召回。
+- 做 metadata、policy、dependency 过滤。
+- 根据历史表现排序。
+
+### LearningService
+
+负责从任务中学习新工具。
+
+职责：
+
+- 判断能力缺口。
+- 调用 ToolGenerator。
+- 生成 Manifest。
+- 查找可复用 Library。
+- 触发验证和策略检查。
+- 保存 Tool 并更新 Registry。
+
+### ValidationService
+
+负责验证 Tool 或 Library 是否可用。
+
+职责：
+
+- Schema 检查。
+- 测试执行。
+- 依赖检查。
+- 沙箱报告汇总。
+
+### ExecutionService
+
+负责执行工具。
+
+职责：
+
+- 检查工具状态。
+- 检查依赖健康。
+- 调用 PolicyService。
+- 调用 Executor / Sandbox。
+- 记录 ExecutionResult。
+
+### PolicyService
+
+负责安全策略。
+
+职责：
+
+- 权限检查。
+- 风险评级。
+- 判断是否需要 Review。
+- 拒绝危险执行。
+
+### LifecycleService
+
+负责生命周期和版本演进。
+
+职责：
+
+- Draft / Validated / Approved / Quarantined / Deprecated 状态流转。
+- 版本提升。
+- 失败次数监控。
+- 依赖变更影响分析。
+
+### BenchmarkService
+
+负责证明 EvoTool 是否真的有效。
+
+职责：
+
+- 运行 benchmark suite。
+- 对比 baseline 和 EvoTool 模式。
+- 统计 token、耗时、复用次数、失败率、安全拦截次数。
 ## 核心接口
 
 核心接口统一放在 `internal/ports` 中。接口要小而专注，避免大而全。
@@ -857,6 +1010,79 @@ TaskSpec
 
 不要一开始就做自动修复、自动抽取公共库、分布式执行、多 Agent 协作。那些属于后续阶段。
 
+## 核心运行流程
+
+EvoTool 至少有四条核心流程。后续代码必须围绕这些流程拆分职责，不要把所有逻辑写进一个对象或一个函数。
+
+### 工具复用流程
+
+```text
+TaskSpec
+  -> Normalize intent
+  -> Build RetrievalQuery
+  -> Search Registry
+  -> Retrieve Tool candidates
+  -> Filter by metadata
+  -> Filter by policy
+  -> Check dependency health
+  -> Rank by score + success history
+  -> Select Tool
+  -> Execute Tool
+  -> Record ExecutionResult
+```
+
+如果找到合适工具，就不再重新生成工具。
+
+### 工具学习流程
+
+```text
+TaskSpec
+  -> Capability gap detected
+  -> Generate tool source
+  -> Generate manifest
+  -> Validate naming and manifest
+  -> Detect reusable libraries
+  -> Validate generated tool
+  -> Run policy check
+  -> Review if high risk
+  -> Save Tool
+  -> Update Registry
+  -> Execute Tool
+  -> Record ExecutionResult
+```
+
+这条链路是 EvoTool 的核心价值：Agent 不只是完成任务，还把本次任务中产生的新能力沉淀下来。
+
+### Library 复用流程
+
+```text
+GeneratedTool
+  -> Analyze imports and helper functions
+  -> Search existing Libraries
+  -> Match by category, description, exports, embedding
+  -> Reuse Library if compatible
+  -> Record Tool -> Library dependency
+  -> Validate Tool with resolved dependencies
+```
+
+MVP 阶段可以只做“发现并记录可复用 Library”。自动抽取共享库属于第二阶段。
+
+### 生命周期演进流程
+
+```text
+Tool v1
+  -> Execute
+  -> Record success/failure
+  -> Detect repeated failures
+  -> Quarantine if unhealthy
+  -> Generate or repair v2
+  -> Validate v2
+  -> Policy check
+  -> Promote v2 as current
+  -> Deprecate v1
+```
+
+Library 也必须有生命周期。Library 升级后，依赖它的 Tool 必须重新验证。
 ## Benchmark 要求
 
 EvoTool 必须通过 Benchmark 证明它的价值。不能只说“更智能”或“更高效”。
@@ -1176,6 +1402,44 @@ Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依
 - 将多个 Tool 的共享代码复制粘贴而不记录重复。
 - 吞掉失败信息而不记录。
 
+## MVP 边界
+
+第一版 MVP 不要试图一次做完完整能力生态。
+
+MVP 必须完成：
+
+1. 领域模型。
+2. Tool Manifest。
+3. Library Manifest 的基础模型。
+4. 文件系统 ToolStore。
+5. 文件系统 LibraryStore。
+6. 简单 Registry metadata。
+7. 简单关键词检索。
+8. ToolMemoryService。
+9. ExecutionResult 记录。
+10. 基础安全策略模型。
+11. 一个本地可信 Demo Executor。
+12. 一个实际案例。
+
+MVP 暂时不做：
+
+- 自动修复。
+- 自动抽取公共库。
+- 分布式沙箱。
+- 复杂向量数据库。
+- 完整 Eino/OpenHands 合并级 Adapter。
+- 多 Agent 协作。
+
+第二阶段再做：
+
+- Embedding 检索。
+- Hybrid Retriever。
+- Dependency Graph。
+- Code Similarity Detection。
+- Shared Library 候选抽取。
+- Docker Sandbox。
+- MCP Server。
+- Eino/OpenHands Adapter。
 ## 实现优先级
 
 按以下顺序推进：
@@ -1224,3 +1488,5 @@ Adapter 测试可以使用 fake 或临时目录。普通单元测试不能强依
 - 文档
 
 然后把改动限制在对应层内。只有当边界确实需要配套调整时，才允许小范围修改其他层。
+
+
