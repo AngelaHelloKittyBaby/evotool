@@ -118,6 +118,27 @@ Existing Tools
   -> Agent-assisted refactor
 ```
 
+## 4.1 当前 MVP 的 Library 检索实现
+
+当前 MVP 已经把“生成前搜索 Library”落到本地文件系统适配器：
+
+```text
+registry/metadata/libraries/*.json
+              |
+              v
+internal/adapter/retriever/local/LibraryRetriever
+              |
+              v
+CapabilityMemoryService.SearchLibraries
+              |
+              v
+Agent 选择兼容的 Library 作为新 Tool 的依赖
+```
+
+当前实现会根据 Library 的名称、描述、分类、Runtime、Tags、Exports 和依赖信息进行本地关键词召回，并按照 Runtime、网络权限、生命周期和信任等级进行兼容性过滤。
+
+它暂时不做自动代码抽取或自动重构。后续可以在不改变 `ports.LibraryRetriever` 契约的前提下，替换成 embedding、向量数据库或混合检索实现。
+
 ## 5. 完整闭环
 
 ```text

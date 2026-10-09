@@ -9,7 +9,7 @@ import (
 	"github.com/AngelaHelloKittyBaby/evotool/internal/ports"
 )
 
-// CapabilityMemoryServiceConfig 描述 CapabilityMemoryService 的依赖。
+// CapabilityMemoryServiceConfig contains dependencies for the capability memory facade.
 type CapabilityMemoryServiceConfig struct {
 	ToolStore         ports.ToolStore
 	LibraryStore      ports.LibraryStore
@@ -17,19 +17,21 @@ type CapabilityMemoryServiceConfig struct {
 	ExecutionRecorder ports.ExecutionRecorder
 	AuditLogger       ports.AuditLogger
 	RetrievalService  *RetrievalService
+	LibraryRetriever  ports.LibraryRetriever
 }
 
-// CapabilityMemoryService 是 EvoTool 能力记忆的应用服务门面。
+// CapabilityMemoryService provides the main application operations for EvoTool memory.
 type CapabilityMemoryService struct {
-	tools     ports.ToolStore
-	libraries ports.LibraryStore
-	registry  ports.RegistryStore
-	recorder  ports.ExecutionRecorder
-	audit     ports.AuditLogger
-	retrieval *RetrievalService
+	tools            ports.ToolStore
+	libraries        ports.LibraryStore
+	registry         ports.RegistryStore
+	recorder         ports.ExecutionRecorder
+	audit            ports.AuditLogger
+	retrieval        *RetrievalService
+	libraryRetriever ports.LibraryRetriever
 }
 
-// NewCapabilityMemoryService 创建 CapabilityMemoryService。
+// NewCapabilityMemoryService creates the capability memory facade.
 func NewCapabilityMemoryService(config CapabilityMemoryServiceConfig) (*CapabilityMemoryService, error) {
 	if config.ToolStore == nil {
 		return nil, fmt.Errorf("%w: tool store", ErrMissingDependency)
@@ -42,16 +44,17 @@ func NewCapabilityMemoryService(config CapabilityMemoryServiceConfig) (*Capabili
 	}
 
 	return &CapabilityMemoryService{
-		tools:     config.ToolStore,
-		libraries: config.LibraryStore,
-		registry:  config.RegistryStore,
-		recorder:  config.ExecutionRecorder,
-		audit:     config.AuditLogger,
-		retrieval: config.RetrievalService,
+		tools:            config.ToolStore,
+		libraries:        config.LibraryStore,
+		registry:         config.RegistryStore,
+		recorder:         config.ExecutionRecorder,
+		audit:            config.AuditLogger,
+		retrieval:        config.RetrievalService,
+		libraryRetriever: config.LibraryRetriever,
 	}, nil
 }
 
-// SearchTools 检索可复用工具能力。
+// SearchTools searches reusable tools for a task.
 func (s *CapabilityMemoryService) SearchTools(ctx context.Context, task domain.TaskSpec) (domain.RetrievalResult, error) {
 	if s.retrieval == nil {
 		return domain.RetrievalResult{}, fmt.Errorf("%w: retrieval service", ErrMissingDependency)
@@ -59,7 +62,19 @@ func (s *CapabilityMemoryService) SearchTools(ctx context.Context, task domain.T
 	return s.retrieval.Search(ctx, task)
 }
 
-// SaveTool 保存 Tool，并同步更新 Registry。
+// SearchLibraries searches reusable libraries for a generated tool dependency query.
+func (s *CapabilityMemoryService) SearchLibraries(ctx context.Context, query domain.RetrievalQuery) ([]domain.LibraryCandidate, error) {
+	if s.libraryRetriever == nil {
+		return nil, fmt.Errorf("%w: library retriever", ErrMissingDependency)
+	}
+	candidates, err := s.libraryRetriever.SearchLibraries(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("search libraries: %w", err)
+	}
+	return candidates, nil
+}
+
+// SaveTool saves a tool and synchronizes its registry metadata.
 func (s *CapabilityMemoryService) SaveTool(ctx context.Context, tool domain.Tool) error {
 	if err := s.tools.Save(ctx, tool); err != nil {
 		return fmt.Errorf("save tool: %w", err)
@@ -70,7 +85,7 @@ func (s *CapabilityMemoryService) SaveTool(ctx context.Context, tool domain.Tool
 	return s.logAudit(ctx, "tool.saved", domain.AuditSubjectTool, tool.ID, tool.Name)
 }
 
-// GetTool 读取 Tool 本体。
+// GetTool returns a stored tool by ID.
 func (s *CapabilityMemoryService) GetTool(ctx context.Context, id string) (domain.Tool, error) {
 	tool, err := s.tools.Get(ctx, id)
 	if err != nil {
@@ -79,7 +94,7 @@ func (s *CapabilityMemoryService) GetTool(ctx context.Context, id string) (domai
 	return tool, nil
 }
 
-// SaveLibrary 保存 Library，并同步更新 Registry。
+// SaveLibrary saves a library and synchronizes its registry metadata.
 func (s *CapabilityMemoryService) SaveLibrary(ctx context.Context, library domain.Library) error {
 	if err := s.libraries.Save(ctx, library); err != nil {
 		return fmt.Errorf("save library: %w", err)
@@ -90,7 +105,7 @@ func (s *CapabilityMemoryService) SaveLibrary(ctx context.Context, library domai
 	return s.logAudit(ctx, "library.saved", domain.AuditSubjectLibrary, library.ID, library.Name)
 }
 
-// GetLibrary 读取 Library 本体。
+// GetLibrary returns a stored library by ID.
 func (s *CapabilityMemoryService) GetLibrary(ctx context.Context, id string) (domain.Library, error) {
 	library, err := s.libraries.Get(ctx, id)
 	if err != nil {
@@ -99,7 +114,7 @@ func (s *CapabilityMemoryService) GetLibrary(ctx context.Context, id string) (do
 	return library, nil
 }
 
-// RecordExecution 记录工具执行结果。
+// RecordExecution records a tool execution result.
 func (s *CapabilityMemoryService) RecordExecution(ctx context.Context, result domain.ExecutionResult) error {
 	if s.recorder == nil {
 		return fmt.Errorf("%w: execution recorder", ErrMissingDependency)

@@ -5,8 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
+	localretriever "github.com/AngelaHelloKittyBaby/evotool/internal/adapter/retriever/local"
 	"github.com/AngelaHelloKittyBaby/evotool/internal/adapter/store/filesystem"
 	"github.com/AngelaHelloKittyBaby/evotool/internal/domain"
 	"github.com/AngelaHelloKittyBaby/evotool/internal/service"
@@ -28,6 +30,8 @@ func run(args []string) error {
 	switch args[0] {
 	case "demo":
 		return runDemo(args[1:])
+	case "search":
+		return runSearch(args[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return nil
@@ -50,6 +54,13 @@ func runDemo(args []string) error {
 			return err
 		}
 		return saveDemoTool(*root)
+	case "save-library":
+		flags := flag.NewFlagSet("demo save-library", flag.ContinueOnError)
+		root := flags.String("root", filesystem.DefaultRoot, "EvoTool memory root directory")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		return saveDemoLibrary(*root)
 	case "help", "-h", "--help":
 		printDemoUsage()
 		return nil
@@ -58,6 +69,105 @@ func runDemo(args []string) error {
 	}
 }
 
+func runSearch(args []string) error {
+	if len(args) == 0 {
+		printSearchUsage()
+		return nil
+	}
+
+	switch args[0] {
+	case "tools":
+		return runSearchTools(args[1:])
+	case "libraries":
+		return runSearchLibraries(args[1:])
+	case "help", "-h", "--help":
+		printSearchUsage()
+		return nil
+	default:
+		return fmt.Errorf("unknown search command %q", args[0])
+	}
+}
+
+type searchToolOptions struct {
+	root      string
+	query     string
+	category  string
+	runtime   string
+	input     string
+	output    string
+	limit     int
+	noNetwork bool
+}
+
+func runSearchTools(args []string) error {
+	flags := flag.NewFlagSet("search tools", flag.ContinueOnError)
+	root := flags.String("root", filesystem.DefaultRoot, "EvoTool memory root directory")
+	query := flags.String("query", "", "search query")
+	category := flags.String("category", "", "required tool category")
+	runtime := flags.String("runtime", "", "required runtime")
+	input := flags.String("input", "", "required input type or name")
+	output := flags.String("output", "", "required output type or name")
+	limit := flags.Int("limit", 3, "maximum candidates to print")
+	noNetwork := flags.Bool("no-network", false, "exclude tools that require network access")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	searchQuery := strings.TrimSpace(*query)
+	if searchQuery == "" {
+		searchQuery = strings.TrimSpace(strings.Join(flags.Args(), " "))
+	}
+	if searchQuery == "" {
+		return fmt.Errorf("search query is required")
+	}
+	if *limit <= 0 {
+		return fmt.Errorf("limit must be greater than zero")
+	}
+
+	return searchTools(searchToolOptions{
+		root:      *root,
+		query:     searchQuery,
+		category:  *category,
+		runtime:   *runtime,
+		input:     *input,
+		output:    *output,
+		limit:     *limit,
+		noNetwork: *noNetwork,
+	})
+}
+
+func runSearchLibraries(args []string) error {
+	flags := flag.NewFlagSet("search libraries", flag.ContinueOnError)
+	root := flags.String("root", filesystem.DefaultRoot, "EvoTool memory root directory")
+	query := flags.String("query", "", "library search query")
+	category := flags.String("category", "", "required library category")
+	runtime := flags.String("runtime", "", "required runtime")
+	limit := flags.Int("limit", 5, "maximum libraries to print")
+	noNetwork := flags.Bool("no-network", false, "exclude libraries that require network access")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	searchQuery := strings.TrimSpace(*query)
+	if searchQuery == "" {
+		searchQuery = strings.TrimSpace(strings.Join(flags.Args(), " "))
+	}
+	if searchQuery == "" {
+		return fmt.Errorf("search query is required")
+	}
+	if *limit <= 0 {
+		return fmt.Errorf("limit must be greater than zero")
+	}
+
+	return searchLibraries(searchToolOptions{
+		root:      *root,
+		query:     searchQuery,
+		category:  *category,
+		runtime:   *runtime,
+		limit:     *limit,
+		noNetwork: *noNetwork,
+	})
+}
 func saveDemoTool(root string) error {
 	memory, err := newCapabilityMemory(root)
 	if err != nil {
@@ -73,6 +183,89 @@ func saveDemoTool(root string) error {
 	return nil
 }
 
+func searchLibraries(options searchToolOptions) error {
+	stores := filesystem.NewStores(options.root)
+	memory, err := service.NewCapabilityMemoryService(service.CapabilityMemoryServiceConfig{
+		ToolStore:        stores.Tools,
+		LibraryStore:     stores.Libraries,
+		RegistryStore:    stores.Registry,
+		LibraryRetriever: localretriever.NewLibraryRetriever(options.root),
+	})
+	if err != nil {
+		return fmt.Errorf("create library memory: %w", err)
+	}
+
+	query := domain.RetrievalQuery{
+		Intent: options.query,
+		Limit:  options.limit,
+	}
+	if options.category != "" {
+		query.Categories = []string{options.category}
+	}
+	if options.runtime != "" {
+		query.Filters.Runtime = options.runtime
+	}
+	if options.noNetwork {
+		allowed := false
+		query.Filters.NetworkAllowed = &allowed
+	}
+
+	candidates, err := memory.SearchLibraries(context.Background(), query)
+	if err != nil {
+		return err
+	}
+	printLibraryResults(candidates)
+	return nil
+}
+func searchTools(options searchToolOptions) error {
+	filters := domain.RetrievalFilters{Runtime: options.runtime}
+	if options.noNetwork {
+		allowed := false
+		filters.NetworkAllowed = &allowed
+	}
+
+	retrieval, err := service.NewRetrievalService(service.RetrievalServiceConfig{
+		IntentExtractor: localretriever.IntentExtractor{
+			SemanticTopK: 50,
+			FilterTopK:   maxInt(options.limit*4, options.limit),
+			RankTopK:     options.limit,
+			Filters:      filters,
+		},
+		ToolRetriever: localretriever.NewToolRetriever(options.root),
+		Ranker:        localretriever.NewCapabilityRanker(),
+	})
+	if err != nil {
+		return fmt.Errorf("create retrieval service: %w", err)
+	}
+
+	metadata := map[string]string{}
+	setMetadata(metadata, "category", options.category)
+	setMetadata(metadata, "runtime", options.runtime)
+	setMetadata(metadata, "input", options.input)
+	setMetadata(metadata, "output", options.output)
+
+	result, err := retrieval.Search(context.Background(), domain.TaskSpec{Intent: options.query, Metadata: metadata})
+	if err != nil {
+		return fmt.Errorf("search tools: %w", err)
+	}
+	printSearchResults(result)
+	return nil
+}
+
+func saveDemoLibrary(root string) error {
+	memory, err := newCapabilityMemory(root)
+	if err != nil {
+		return err
+	}
+
+	library := demoPDFParserLibrary()
+	if err := memory.SaveLibrary(context.Background(), library); err != nil {
+		return fmt.Errorf("save demo library: %w", err)
+	}
+
+	fmt.Printf("saved demo library %q into %s\n", library.Name, root)
+	return nil
+}
 func newCapabilityMemory(root string) (*service.CapabilityMemoryService, error) {
 	stores := filesystem.NewStores(root)
 	memory, err := service.NewCapabilityMemoryService(service.CapabilityMemoryServiceConfig{
@@ -88,6 +281,153 @@ func newCapabilityMemory(root string) (*service.CapabilityMemoryService, error) 
 	return memory, nil
 }
 
+func printLibraryResults(candidates []domain.LibraryCandidate) {
+	if len(candidates) == 0 {
+		fmt.Println("no matching libraries found")
+		return
+	}
+	fmt.Println("libraries:")
+	for index, candidate := range candidates {
+		fmt.Printf(
+			"%d. %s score=%.3f compatible=%t category=%s runtime=%s reason=%s\n",
+			index+1,
+			displayLibraryName(candidate.Library),
+			candidate.Score,
+			candidate.Compatible,
+			displayLibraryCategory(candidate.Library),
+			displayLibraryRuntime(candidate.Library),
+			candidate.Reason,
+		)
+	}
+}
+
+func displayLibraryName(library domain.Library) string {
+	if strings.TrimSpace(library.Name) != "" {
+		return library.Name
+	}
+	return library.ID
+}
+
+func displayLibraryCategory(library domain.Library) string {
+	if strings.TrimSpace(library.Category) != "" {
+		return library.Category
+	}
+	return library.Manifest.Category
+}
+
+func displayLibraryRuntime(library domain.Library) string {
+	return library.Manifest.Runtime
+}
+func printSearchResults(result domain.RetrievalResult) {
+	if len(result.Candidates) == 0 {
+		fmt.Println("no matching tools found")
+		return
+	}
+	if result.Selected != nil {
+		fmt.Printf("selected: %s\n", displayToolName(result.Selected.Tool))
+	}
+	fmt.Println("candidates:")
+	for index, candidate := range result.Candidates {
+		fmt.Printf(
+			"%d. %s score=%.3f semantic=%.3f category=%s runtime=%s reason=%s\n",
+			index+1,
+			displayToolName(candidate.Tool),
+			candidate.Score,
+			candidate.RankScore.SemanticSimilarity,
+			displayToolCategory(candidate.Tool),
+			displayToolRuntime(candidate.Tool),
+			candidate.MatchReason,
+		)
+	}
+}
+
+func displayToolName(tool domain.Tool) string {
+	if strings.TrimSpace(tool.Name) != "" {
+		return tool.Name
+	}
+	return tool.ID
+}
+
+func displayToolCategory(tool domain.Tool) string {
+	if strings.TrimSpace(tool.Category) != "" {
+		return tool.Category
+	}
+	return tool.Manifest.Category
+}
+
+func displayToolRuntime(tool domain.Tool) string {
+	if strings.TrimSpace(tool.Manifest.Runtime) != "" {
+		return tool.Manifest.Runtime
+	}
+	return tool.Manifest.Environment.Runtime
+}
+
+func setMetadata(metadata map[string]string, key string, value string) {
+	value = strings.TrimSpace(value)
+	if value != "" {
+		metadata[key] = value
+	}
+}
+
+func maxInt(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func demoPDFParserLibrary() domain.Library {
+	now := time.Now().UTC()
+	return domain.Library{
+		ID:              "pdf_parser",
+		Name:            "pdf_parser",
+		Description:     "Parse PDF documents and extract structured tables.",
+		Category:        "document_processing",
+		CurrentVersion:  "v1",
+		LifecycleStatus: domain.LifecycleApproved,
+		TrustLevel:      domain.TrustValidated,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		Manifest: domain.LibraryManifest{
+			Name:        "pdf_parser",
+			Description: "Reusable PDF parsing and table extraction primitives.",
+			Category:    "document_processing",
+			Runtime:     "python",
+			Exports: []domain.LibraryExport{
+				{Name: "parse_pdf", Kind: "function", Description: "Parse a PDF document."},
+				{Name: "extract_tables", Kind: "function", Description: "Extract tables from a parsed PDF."},
+			},
+			Tags: []string{"pdf", "parser", "table", "document"},
+		},
+		Versions: []domain.LibraryVersion{
+			{
+				Version:   "v1",
+				CreatedAt: now,
+				Files: []domain.SourceFile{
+					{Path: "source/parser.py", Content: demoPDFParserSource()},
+					{Path: "README.md", Content: demoLibraryReadme()},
+				},
+			},
+		},
+	}
+}
+
+func demoPDFParserSource() string {
+	return `def parse_pdf(path):
+    return {"path": path, "pages": []}
+
+
+def extract_tables(parsed_pdf):
+    return parsed_pdf.get("tables", [])
+`
+}
+
+func demoLibraryReadme() string {
+	return `# pdf_parser
+
+Reusable PDF parsing library for generated EvoTool tools.
+`
+}
 func demoPDFToExcelTool() domain.Tool {
 	now := time.Now().UTC()
 	return domain.Tool{
@@ -197,6 +537,9 @@ func printUsage() {
 
 Usage:
   evotool demo save-tool [--root .evotool]
+  evotool demo save-library [--root .evotool]
+  evotool search tools --query "pdf excel" [--root .evotool]
+  evotool search libraries --query "pdf parser" [--root .evotool]
   evotool help`)
 }
 
@@ -204,5 +547,15 @@ func printDemoUsage() {
 	fmt.Println(`EvoTool demo commands
 
 Usage:
-  evotool demo save-tool [--root .evotool]`)
+  evotool demo save-tool [--root .evotool]
+  evotool demo save-library [--root .evotool]`)
+}
+
+func printSearchUsage() {
+	fmt.Println(`EvoTool search commands
+
+Usage:
+  evotool search tools --query "pdf excel" [--root .evotool]
+  evotool search libraries --query "pdf parser" [--root .evotool]
+  evotool search tools "pdf excel" --category document_processing --runtime python`)
 }

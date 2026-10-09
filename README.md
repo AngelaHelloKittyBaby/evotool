@@ -23,6 +23,23 @@ This creates a local structure like:
   registry/audit/events.jsonl
 ```
 
+Search the local capability memory:
+
+```bash
+go run ./cmd/evotool search tools --query "pdf table excel" --root .evotool
+```
+
+The search command runs a local retrieval pipeline: keyword recall, metadata filtering, capability ranking, and final selection.
+
+Save the demo shared library and search it before generating another tool:
+
+```bash
+go run ./cmd/evotool demo save-library --root .evotool
+go run ./cmd/evotool search libraries --query "pdf parser table" --runtime python --root .evotool
+```
+
+Library retrieval is intentionally separate from Tool retrieval: a Tool is a top-level callable capability, while a Library is a reusable implementation dependency.
+
 ## Status
 
 EvoTool is in the early design and MVP stage.
@@ -224,6 +241,3 @@ Key metrics:
 ## License
 
 MIT License.
-
-
-
