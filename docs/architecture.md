@@ -167,6 +167,72 @@ pdf_to_excel --uses--> pdf_parser
 
 依赖健康检查是执行前的最小 gate：它会读取依赖图，确认必需的 Library 是否存在，并检查版本约束是否匹配。当前状态会返回 `healthy`、`degraded` 或 `broken`，后续 ExecutionService 应在真正执行 Tool 之前调用这一步。
 
+## 4.3 工具生命周期与长期未使用治理
+
+能力记忆不能无限制地把所有历史 Tool 保留在默认检索集合中。随着 Agent 持续生成能力，长期未使用的 Tool 可能增加检索噪声、维护成本和版本冲突。因此 EvoTool 需要在 Registry 层增加 Tool Retention 能力。
+
+第一版采用“归档优先，删除谨慎”的策略：
+
+```text
+active
+  -> stale
+  -> archived
+  -> deleted
+```
+
+状态含义：
+
+- `active`：正常参与检索和执行。
+- `stale`：超过配置的未使用周期，降低检索优先级，等待后续扫描。
+- `archived`：默认不参与检索，但保留源代码、版本、manifest、依赖图和审计信息。
+- `deleted`：通过删除前检查后才允许物理移除。
+
+生命周期扫描不能只判断 `last_used_at`。至少需要结合：
+
+```text
+last_used_at
+usage_count
+last_successful_at
+success_rate
+last_validated_at
+pinned / retain_until
+dependent_tools
+replacement_version
+```
+
+推荐的治理流程是：
+
+```text
+Lifecycle Scheduler
+  -> 读取 ToolUsageStats 和生命周期策略
+  -> 标记长期未使用 Tool 为 stale
+  -> 到期后归档 Tool
+  -> 默认检索过滤 archived
+  -> 允许管理员或 Agent 显式恢复
+  -> 归档期满后生成删除候选
+  -> 检查依赖、保护标记和保留期限
+  -> 显式确认后删除并写入审计日志
+```
+
+删除必须是最后一步，且不能因为低频使用就直接触发。以下 Tool 默认不能自动删除：
+
+- 被其他 Tool 或 Library 依赖的 Tool。
+- 被标记为 `pinned` 的 Tool。
+- 仍在 `retain_until` 保留期内的 Tool。
+- 近期重新验证通过或刚刚恢复的 Tool。
+- 没有替代版本但属于关键业务或应急用途的 Tool。
+
+归档后的 Tool 不应混入默认检索，但应该保留两种访问方式：
+
+```text
+普通检索 -> active / approved
+显式恢复检索 -> archived
+```
+
+这项设计的目标首先是提高检索质量和治理能力，其次才是减少磁盘占用。因为真正影响 Agent 选择质量的通常是候选噪声，而不是 Tool 文件本身占用的空间。
+
+当前 MVP 只完成了生命周期状态和使用统计的基础模型，尚未实现自动扫描、归档、恢复和物理删除。后续 `LifecycleService` 应提供策略配置、扫描报告、dry-run、归档、恢复和受保护删除能力。
+
 ## 5. 完整闭环
 
 ```text
@@ -214,7 +280,7 @@ pdf_to_excel --uses--> pdf_parser
                                Capability Registry
 ```
 
-第一版先把 Tool Registry、Library Registry、Semantic Retrieval、Dependency Graph、Eino Adapter 做扎实。自动代码重构和自动修复放到第二阶段。
+第一版先把 Tool Registry、Library Registry、Semantic Retrieval、Dependency Graph、执行前依赖检查和基础生命周期策略做扎实。自动代码重构、自动修复和自动物理删除放到后续阶段。
 
 ## 6. 安全边界
 

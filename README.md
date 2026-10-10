@@ -95,6 +95,60 @@ webpage_to_markdown
 
 Each tool should have a semantic name, a manifest, tests, documentation, execution history, and lifecycle state.
 
+## Tool Lifecycle and Retention
+
+能力库会随着 Agent 持续生成工具而增长。如果所有历史工具都永久参与检索，候选数量、检索噪声和维护成本都会不断增加。因此 EvoTool 需要提供工具保留策略，根据使用情况治理长期未使用的 Tool。
+
+第一版设计不采用“长时间没用过就立即删除”，而是采用分阶段生命周期：
+
+```text
+active
+  -> stale
+  -> archived
+  -> deleted
+```
+
+- `active`：正常参与检索和执行。
+- `stale`：长时间未使用，降低检索优先级并等待复查。
+- `archived`：默认不参与检索，但保留 Tool 文件、版本和元数据，可以恢复。
+- `deleted`：满足安全条件后才允许物理删除。
+
+生命周期判断应综合以下信息，而不是只看最后使用时间：
+
+- `last_used_at`
+- `usage_count`
+- `last_successful_at`
+- `success_rate`
+- `last_validated_at`
+- 是否被其他 Tool 或 Library 依赖
+- 是否被标记为 `pinned`
+- 是否仍在保留期限内
+- 是否存在可替代的新版本
+
+推荐治理流程：
+
+```text
+定期扫描
+  -> 识别长期未使用 Tool
+  -> 标记 stale
+  -> 到期后归档
+  -> 从默认检索集合移除
+  -> 保留恢复入口
+  -> 满足全部条件后才允许人工确认删除
+```
+
+默认检索只选择 `active`、`approved` 等可用状态。若正常检索没有结果，可以由 Agent 或管理员显式查询 `archived` 工具，避免低频但重要的年度报表、应急修复和季节性工具被永久丢失。
+
+删除前必须确认：
+
+- 没有其他能力依赖该 Tool。
+- 没有 `pinned` 或 `retain_until` 保护。
+- 已经超过归档保留期限。
+- 没有正在使用的版本。
+- 删除操作经过显式确认并记录审计日志。
+
+这项能力目前属于设计和后续实现阶段，当前 MVP 还不会自动归档或删除工具。详细方案见 [`docs/lifecycle.md`](docs/lifecycle.md)。
+
 ### Libraries
 
 Libraries are shared lower-level capabilities used by multiple tools:
@@ -244,7 +298,10 @@ Key metrics:
 - MCP server adapter
 - Eino adapter first, then OpenHands adapter
 - Semantic/vector retrieval
-- Dependency graph`r`n- Code similarity detection`r`n- Shared library extraction candidates
+- Dependency graph
+- Tool lifecycle retention and archive policy
+- Code similarity detection
+- Shared library extraction candidates
 - Tool versioning and lifecycle management
 - Failure analysis and automatic repair
 

@@ -1113,6 +1113,60 @@ Tool v1
 ```
 
 第一版不做自动修复。失败只需要被记录、统计、影响排序，并为后续 Evolution 留接口。
+
+### 长期未使用 Tool 的保留与归档
+
+能力库会持续增长，不能让所有历史 Tool 永久参与默认检索。后续实现生命周期治理时，必须遵循“归档优先、删除谨慎”的原则：
+
+```text
+active
+  -> stale
+  -> archived
+  -> deleted
+```
+
+- `active`：正常参与检索和执行。
+- `stale`：长时间未使用，降低检索优先级并等待复查。
+- `archived`：默认不参与检索，但保留 Tool 文件、版本、manifest、依赖图和审计信息。
+- `deleted`：只有通过删除前检查和显式确认后才允许物理删除。
+
+生命周期判断不能只依赖最后使用时间，至少应考虑：
+
+- `last_used_at`
+- `usage_count`
+- `last_successful_at`
+- `success_rate`
+- `last_validated_at`
+- 是否被其他 Tool 或 Library 依赖
+- 是否有 `pinned` 或 `retain_until` 保护
+- 是否存在替代版本
+- 是否属于关键业务或季节性任务
+
+实现要求：
+
+- 默认检索过滤 `archived`、`quarantined` 和 `deleted`。
+- 归档 Tool 必须支持显式恢复。
+- 恢复后必须重新进行依赖、验证和策略检查。
+- 被依赖、被保护或仍在保留期内的 Tool 不得自动删除。
+- 清理任务必须支持 `dry-run`。
+- 物理删除必须显式确认，并记录审计日志。
+- 不允许只删除 Tool 文件而遗留可执行的 Registry 元数据。
+- 第一版优先实现扫描、标记 stale、归档和恢复，暂缓自动物理删除。
+
+推荐策略示例：
+
+```yaml
+retention:
+  stale_after: 90d
+  archive_after: 180d
+  purge_after: 365d
+  require_no_dependents: true
+  require_explicit_delete_confirmation: true
+  protect_pinned_tools: true
+```
+
+详细设计见 `docs/lifecycle.md`。
+
 ## Benchmark 要求
 
 EvoTool 必须通过 Benchmark 证明它的价值。不能只说“更智能”或“更高效”。
