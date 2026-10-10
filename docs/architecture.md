@@ -163,7 +163,9 @@ pdf_to_excel --uses--> pdf_parser
 - Benchmark 统计 Library 复用次数。
 - 生命周期管理中判断是否需要 quarantine 或 deprecate。
 
-当前 CLI 可以通过 `evotool demo link-tool-library` 写入示例依赖图，并通过 `evotool deps graph --id pdf_to_excel` 查询。
+当前 CLI 可以通过 `evotool demo link-tool-library` 写入示例依赖图，通过 `evotool deps graph --id pdf_to_excel` 查询图结构，并通过 `evotool deps check --id pdf_to_excel` 执行依赖健康检查。
+
+依赖健康检查是执行前的最小 gate：它会读取依赖图，确认必需的 Library 是否存在，并检查版本约束是否匹配。当前状态会返回 `healthy`、`degraded` 或 `broken`，后续 ExecutionService 应在真正执行 Tool 之前调用这一步。
 
 ## 5. 完整闭环
 

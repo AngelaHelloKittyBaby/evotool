@@ -115,6 +115,17 @@ func runDeps(args []string) error {
 			return fmt.Errorf("dependency graph id is required")
 		}
 		return showDependencyGraph(*root, *id)
+	case "check":
+		flags := flag.NewFlagSet("deps check", flag.ContinueOnError)
+		root := flags.String("root", filesystem.DefaultRoot, "EvoTool memory root directory")
+		id := flags.String("id", "", "root capability id")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*id) == "" {
+			return fmt.Errorf("dependency check id is required")
+		}
+		return checkDependencies(*root, *id)
 	case "help", "-h", "--help":
 		printDepsUsage()
 		return nil
@@ -328,6 +339,19 @@ func showDependencyGraph(root string, id string) error {
 	return nil
 }
 
+func checkDependencies(root string, id string) error {
+	memory, err := newCapabilityMemory(root)
+	if err != nil {
+		return err
+	}
+	result, err := memory.CheckToolDependencies(context.Background(), id)
+	if err != nil {
+		return err
+	}
+	printDependencyCheckResult(result)
+	return nil
+}
+
 func newCapabilityMemory(root string) (*service.CapabilityMemoryService, error) {
 	stores := filesystem.NewStores(root)
 	memory, err := service.NewCapabilityMemoryService(service.CapabilityMemoryServiceConfig{
@@ -404,6 +428,18 @@ func printDependencyGraph(graph domain.DependencyGraph) {
 	fmt.Println("edges:")
 	for _, edge := range graph.Edges {
 		fmt.Printf("- %s -> %s (%s)\n", edge.FromID, edge.ToID, edge.Kind)
+	}
+}
+
+func printDependencyCheckResult(result domain.DependencyCheckResult) {
+	fmt.Printf("dependency health: %s healthy=%t\n", result.Graph.HealthStatus, result.Healthy)
+	if len(result.Issues) == 0 {
+		fmt.Println("issues: none")
+		return
+	}
+	fmt.Println("issues:")
+	for _, issue := range result.Issues {
+		fmt.Printf("- %s %s status=%s %s\n", issue.Kind, issue.DependencyID, issue.Status, issue.Message)
 	}
 }
 
@@ -635,6 +671,7 @@ Usage:
   evotool search tools --query "pdf excel" [--root .evotool]
   evotool search libraries --query "pdf parser" [--root .evotool]
   evotool deps graph --id pdf_to_excel [--root .evotool]
+  evotool deps check --id pdf_to_excel [--root .evotool]
   evotool help`)
 }
 
@@ -660,5 +697,6 @@ func printDepsUsage() {
 	fmt.Println(`EvoTool dependency commands
 
 Usage:
-  evotool deps graph --id pdf_to_excel [--root .evotool]`)
+  evotool deps graph --id pdf_to_excel [--root .evotool]
+  evotool deps check --id pdf_to_excel [--root .evotool]`)
 }

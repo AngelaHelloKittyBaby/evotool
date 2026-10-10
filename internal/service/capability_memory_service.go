@@ -30,6 +30,7 @@ type CapabilityMemoryService struct {
 	audit            ports.AuditLogger
 	retrieval        *RetrievalService
 	libraryRetriever ports.LibraryRetriever
+	dependency       *DependencyService
 }
 
 // NewCapabilityMemoryService creates the capability memory facade.
@@ -44,6 +45,14 @@ func NewCapabilityMemoryService(config CapabilityMemoryServiceConfig) (*Capabili
 		return nil, fmt.Errorf("%w: registry store", ErrMissingDependency)
 	}
 
+	dependency, err := NewDependencyService(DependencyServiceConfig{
+		RegistryStore: config.RegistryStore,
+		LibraryStore:  config.LibraryStore,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &CapabilityMemoryService{
 		tools:            config.ToolStore,
 		libraries:        config.LibraryStore,
@@ -52,6 +61,7 @@ func NewCapabilityMemoryService(config CapabilityMemoryServiceConfig) (*Capabili
 		audit:            config.AuditLogger,
 		retrieval:        config.RetrievalService,
 		libraryRetriever: config.LibraryRetriever,
+		dependency:       dependency,
 	}, nil
 }
 
@@ -167,6 +177,15 @@ func (s *CapabilityMemoryService) GetDependencyGraph(ctx context.Context, rootID
 		return domain.DependencyGraph{}, fmt.Errorf("get dependency graph: %w", err)
 	}
 	return graph, nil
+}
+
+// CheckToolDependencies checks whether a Tool dependency graph is executable.
+func (s *CapabilityMemoryService) CheckToolDependencies(ctx context.Context, toolID string) (domain.DependencyCheckResult, error) {
+	result, err := s.dependency.CheckTool(ctx, toolID)
+	if err != nil {
+		return domain.DependencyCheckResult{}, fmt.Errorf("check tool dependencies: %w", err)
+	}
+	return result, nil
 }
 
 // SaveTool saves a tool and synchronizes its registry metadata.

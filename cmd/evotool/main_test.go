@@ -72,10 +72,19 @@ func TestRunDemoLinkToolLibrary(t *testing.T) {
 	if err := run([]string{"deps", "graph", "--root", root, "--id", "pdf_to_excel"}); err != nil {
 		t.Fatalf("run deps graph: %v", err)
 	}
+	if err := run([]string{"deps", "check", "--root", root, "--id", "pdf_to_excel"}); err != nil {
+		t.Fatalf("run deps check: %v", err)
+	}
 }
 
 func TestRunDepsGraphRequiresID(t *testing.T) {
 	if err := run([]string{"deps", "graph"}); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestRunDepsCheckRequiresID(t *testing.T) {
+	if err := run([]string{"deps", "check"}); err == nil {
 		t.Fatal("expected error")
 	}
 }

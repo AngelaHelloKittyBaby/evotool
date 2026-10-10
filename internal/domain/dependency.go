@@ -1,22 +1,22 @@
 package domain
 
-// DependencyKind 表示依赖类型。
+// DependencyKind describes the kind of dependency referenced by a capability.
 type DependencyKind string
 
 const (
-	// DependencyTool 表示依赖另一个 Tool。
+	// DependencyTool means a capability depends on another Tool.
 	DependencyTool DependencyKind = "tool"
-	// DependencyLibrary 表示依赖一个 Library。
+	// DependencyLibrary means a capability depends on a shared Library.
 	DependencyLibrary DependencyKind = "library"
-	// DependencyPackage 表示依赖语言生态包，例如 Python package。
+	// DependencyPackage means a capability depends on a language package.
 	DependencyPackage DependencyKind = "package"
-	// DependencyRuntime 表示依赖运行时，例如 python、node、go。
+	// DependencyRuntime means a capability depends on a runtime such as python, node, or go.
 	DependencyRuntime DependencyKind = "runtime"
-	// DependencyMCP 表示依赖外部 MCP 能力。
+	// DependencyMCP means a capability depends on an external MCP capability.
 	DependencyMCP DependencyKind = "mcp"
 )
 
-// DependencyRef 表示 Tool 或 Library 对另一个能力或外部包的依赖声明。
+// DependencyRef declares a dependency on another capability or external package.
 type DependencyRef struct {
 	ID       string
 	Name     string
@@ -25,21 +25,21 @@ type DependencyRef struct {
 	Optional bool
 }
 
-// DependencyHealthStatus 表示依赖图整体健康状态。
+// DependencyHealthStatus describes the overall health of a dependency graph.
 type DependencyHealthStatus string
 
 const (
-	// DependencyHealthy 表示依赖健康。
+	// DependencyHealthy means all required dependencies are available.
 	DependencyHealthy DependencyHealthStatus = "healthy"
-	// DependencyDegraded 表示依赖可用但存在风险或警告。
+	// DependencyDegraded means dependencies are available but have warnings.
 	DependencyDegraded DependencyHealthStatus = "degraded"
-	// DependencyBroken 表示依赖不可用。
+	// DependencyBroken means at least one required dependency is unavailable.
 	DependencyBroken DependencyHealthStatus = "broken"
-	// DependencyUnknown 表示依赖状态未知。
+	// DependencyUnknown means dependency health has not been checked.
 	DependencyUnknown DependencyHealthStatus = "unknown"
 )
 
-// DependencyGraph 表示 Tool 和 Library 之间的依赖关系。
+// DependencyGraph represents dependencies between Tools, Libraries, and external capabilities.
 type DependencyGraph struct {
 	Nodes              []DependencyNode
 	Edges              []DependencyEdge
@@ -47,7 +47,7 @@ type DependencyGraph struct {
 	HealthStatus       DependencyHealthStatus
 }
 
-// DependencyNode 表示依赖图中的一个节点。
+// DependencyNode is a node in a dependency graph.
 type DependencyNode struct {
 	ID      string
 	Name    string
@@ -55,15 +55,30 @@ type DependencyNode struct {
 	Version string
 }
 
-// DependencyEdge 表示依赖图中的一条边。
+// DependencyEdge is an edge in a dependency graph.
 type DependencyEdge struct {
 	FromID string
 	ToID   string
 	Kind   DependencyKind
 }
 
-// VersionConstraint 表示依赖版本约束。
+// VersionConstraint records the expected version for a dependency.
 type VersionConstraint struct {
 	DependencyID string
 	Constraint   string
+}
+
+// DependencyIssue describes a problem or warning discovered during dependency checking.
+type DependencyIssue struct {
+	DependencyID string
+	Kind         DependencyKind
+	Status       DependencyHealthStatus
+	Message      string
+}
+
+// DependencyCheckResult summarizes the dependency health check for a graph.
+type DependencyCheckResult struct {
+	Graph   DependencyGraph
+	Healthy bool
+	Issues  []DependencyIssue
 }

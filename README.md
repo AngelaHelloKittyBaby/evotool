@@ -45,9 +45,10 @@ Record and inspect the Tool -> Library dependency graph:
 ```bash
 go run ./cmd/evotool demo link-tool-library --root .evotool
 go run ./cmd/evotool deps graph --id pdf_to_excel --root .evotool
+go run ./cmd/evotool deps check --id pdf_to_excel --root .evotool
 ```
 
-This records `pdf_to_excel -> pdf_parser` in `.evotool/registry/dependency_graph/pdf_to_excel.json` and updates the tool metadata with a `LibraryRefs` entry.
+This records `pdf_to_excel -> pdf_parser` in `.evotool/registry/dependency_graph/pdf_to_excel.json`, updates the tool metadata with a `LibraryRefs` entry, and verifies that the referenced Library exists with a compatible version.
 
 ## Status
 
