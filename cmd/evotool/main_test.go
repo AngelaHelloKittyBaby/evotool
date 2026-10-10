@@ -61,6 +61,25 @@ func TestRunSearchLibrariesRequiresQuery(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestRunDemoLinkToolLibrary(t *testing.T) {
+	root := t.TempDir()
+	if err := run([]string{"demo", "link-tool-library", "--root", root}); err != nil {
+		t.Fatalf("run demo link-tool-library: %v", err)
+	}
+
+	assertFile(t, filepath.Join(root, "registry", "dependency_graph", "pdf_to_excel.json"))
+	if err := run([]string{"deps", "graph", "--root", root, "--id", "pdf_to_excel"}); err != nil {
+		t.Fatalf("run deps graph: %v", err)
+	}
+}
+
+func TestRunDepsGraphRequiresID(t *testing.T) {
+	if err := run([]string{"deps", "graph"}); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestRunUnknownCommand(t *testing.T) {
 	if err := run([]string{"unknown"}); err == nil {
 		t.Fatal("expected error")

@@ -139,6 +139,32 @@ Agent 选择兼容的 Library 作为新 Tool 的依赖
 
 它暂时不做自动代码抽取或自动重构。后续可以在不改变 `ports.LibraryRetriever` 契约的前提下，替换成 embedding、向量数据库或混合检索实现。
 
+## 4.2 Tool 到 Library 的依赖图
+
+当 Agent 生成 Tool 前检索并选择了可复用 Library，EvoTool 必须把这个选择写成显式依赖，而不是只保存在临时上下文里。当前 MVP 的落点是：
+
+```text
+Tool Manifest.LibraryRefs
+Tool Dependencies
+registry/dependency_graph/<tool-id>.json
+```
+
+示例关系：
+
+```text
+pdf_to_excel --uses--> pdf_parser
+```
+
+这条依赖图后续会用于：
+
+- 执行前检查依赖是否存在和健康。
+- Library 升级后找出受影响的 Tool。
+- 重新验证依赖该 Library 的 Tool。
+- Benchmark 统计 Library 复用次数。
+- 生命周期管理中判断是否需要 quarantine 或 deprecate。
+
+当前 CLI 可以通过 `evotool demo link-tool-library` 写入示例依赖图，并通过 `evotool deps graph --id pdf_to_excel` 查询。
+
 ## 5. 完整闭环
 
 ```text

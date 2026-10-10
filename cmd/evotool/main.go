@@ -32,6 +32,8 @@ func run(args []string) error {
 		return runDemo(args[1:])
 	case "search":
 		return runSearch(args[1:])
+	case "deps":
+		return runDeps(args[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return nil
@@ -61,6 +63,13 @@ func runDemo(args []string) error {
 			return err
 		}
 		return saveDemoLibrary(*root)
+	case "link-tool-library":
+		flags := flag.NewFlagSet("demo link-tool-library", flag.ContinueOnError)
+		root := flags.String("root", filesystem.DefaultRoot, "EvoTool memory root directory")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		return linkDemoToolLibrary(*root)
 	case "help", "-h", "--help":
 		printDemoUsage()
 		return nil
@@ -85,6 +94,32 @@ func runSearch(args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("unknown search command %q", args[0])
+	}
+}
+
+func runDeps(args []string) error {
+	if len(args) == 0 {
+		printDepsUsage()
+		return nil
+	}
+
+	switch args[0] {
+	case "graph":
+		flags := flag.NewFlagSet("deps graph", flag.ContinueOnError)
+		root := flags.String("root", filesystem.DefaultRoot, "EvoTool memory root directory")
+		id := flags.String("id", "", "root capability id")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*id) == "" {
+			return fmt.Errorf("dependency graph id is required")
+		}
+		return showDependencyGraph(*root, *id)
+	case "help", "-h", "--help":
+		printDepsUsage()
+		return nil
+	default:
+		return fmt.Errorf("unknown deps command %q", args[0])
 	}
 }
 
@@ -113,10 +148,7 @@ func runSearchTools(args []string) error {
 		return err
 	}
 
-	searchQuery := strings.TrimSpace(*query)
-	if searchQuery == "" {
-		searchQuery = strings.TrimSpace(strings.Join(flags.Args(), " "))
-	}
+	searchQuery := normalizedQuery(*query, flags.Args())
 	if searchQuery == "" {
 		return fmt.Errorf("search query is required")
 	}
@@ -148,10 +180,7 @@ func runSearchLibraries(args []string) error {
 		return err
 	}
 
-	searchQuery := strings.TrimSpace(*query)
-	if searchQuery == "" {
-		searchQuery = strings.TrimSpace(strings.Join(flags.Args(), " "))
-	}
+	searchQuery := normalizedQuery(*query, flags.Args())
 	if searchQuery == "" {
 		return fmt.Errorf("search query is required")
 	}
@@ -168,6 +197,7 @@ func runSearchLibraries(args []string) error {
 		noNetwork: *noNetwork,
 	})
 }
+
 func saveDemoTool(root string) error {
 	memory, err := newCapabilityMemory(root)
 	if err != nil {
@@ -183,40 +213,44 @@ func saveDemoTool(root string) error {
 	return nil
 }
 
-func searchLibraries(options searchToolOptions) error {
-	stores := filesystem.NewStores(options.root)
-	memory, err := service.NewCapabilityMemoryService(service.CapabilityMemoryServiceConfig{
-		ToolStore:        stores.Tools,
-		LibraryStore:     stores.Libraries,
-		RegistryStore:    stores.Registry,
-		LibraryRetriever: localretriever.NewLibraryRetriever(options.root),
-	})
-	if err != nil {
-		return fmt.Errorf("create library memory: %w", err)
-	}
-
-	query := domain.RetrievalQuery{
-		Intent: options.query,
-		Limit:  options.limit,
-	}
-	if options.category != "" {
-		query.Categories = []string{options.category}
-	}
-	if options.runtime != "" {
-		query.Filters.Runtime = options.runtime
-	}
-	if options.noNetwork {
-		allowed := false
-		query.Filters.NetworkAllowed = &allowed
-	}
-
-	candidates, err := memory.SearchLibraries(context.Background(), query)
+func saveDemoLibrary(root string) error {
+	memory, err := newCapabilityMemory(root)
 	if err != nil {
 		return err
 	}
-	printLibraryResults(candidates)
+
+	library := demoPDFParserLibrary()
+	if err := memory.SaveLibrary(context.Background(), library); err != nil {
+		return fmt.Errorf("save demo library: %w", err)
+	}
+
+	fmt.Printf("saved demo library %q into %s\n", library.Name, root)
 	return nil
 }
+
+func linkDemoToolLibrary(root string) error {
+	memory, err := newCapabilityMemory(root)
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	tool := demoPDFToExcelTool()
+	library := demoPDFParserLibrary()
+	if err := memory.SaveTool(ctx, tool); err != nil {
+		return fmt.Errorf("save demo tool: %w", err)
+	}
+	if err := memory.SaveLibrary(ctx, library); err != nil {
+		return fmt.Errorf("save demo library: %w", err)
+	}
+	graph, err := memory.LinkToolLibraries(ctx, tool, []domain.Library{library})
+	if err != nil {
+		return fmt.Errorf("link demo dependency: %w", err)
+	}
+	printDependencyGraph(graph)
+	return nil
+}
+
 func searchTools(options searchToolOptions) error {
 	filters := domain.RetrievalFilters{Runtime: options.runtime}
 	if options.noNetwork {
@@ -252,20 +286,48 @@ func searchTools(options searchToolOptions) error {
 	return nil
 }
 
-func saveDemoLibrary(root string) error {
-	memory, err := newCapabilityMemory(root)
+func searchLibraries(options searchToolOptions) error {
+	memory, err := newCapabilityMemory(options.root)
 	if err != nil {
 		return err
 	}
 
-	library := demoPDFParserLibrary()
-	if err := memory.SaveLibrary(context.Background(), library); err != nil {
-		return fmt.Errorf("save demo library: %w", err)
+	query := domain.RetrievalQuery{
+		Intent: options.query,
+		Limit:  options.limit,
+	}
+	if options.category != "" {
+		query.Categories = []string{options.category}
+	}
+	if options.runtime != "" {
+		query.Filters.Runtime = options.runtime
+	}
+	if options.noNetwork {
+		allowed := false
+		query.Filters.NetworkAllowed = &allowed
 	}
 
-	fmt.Printf("saved demo library %q into %s\n", library.Name, root)
+	candidates, err := memory.SearchLibraries(context.Background(), query)
+	if err != nil {
+		return err
+	}
+	printLibraryResults(candidates)
 	return nil
 }
+
+func showDependencyGraph(root string, id string) error {
+	memory, err := newCapabilityMemory(root)
+	if err != nil {
+		return err
+	}
+	graph, err := memory.GetDependencyGraph(context.Background(), id)
+	if err != nil {
+		return err
+	}
+	printDependencyGraph(graph)
+	return nil
+}
+
 func newCapabilityMemory(root string) (*service.CapabilityMemoryService, error) {
 	stores := filesystem.NewStores(root)
 	memory, err := service.NewCapabilityMemoryService(service.CapabilityMemoryServiceConfig{
@@ -274,6 +336,7 @@ func newCapabilityMemory(root string) (*service.CapabilityMemoryService, error) 
 		RegistryStore:     stores.Registry,
 		ExecutionRecorder: stores.Executions,
 		AuditLogger:       stores.Audit,
+		LibraryRetriever:  localretriever.NewLibraryRetriever(root),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create capability memory: %w", err)
@@ -281,43 +344,6 @@ func newCapabilityMemory(root string) (*service.CapabilityMemoryService, error) 
 	return memory, nil
 }
 
-func printLibraryResults(candidates []domain.LibraryCandidate) {
-	if len(candidates) == 0 {
-		fmt.Println("no matching libraries found")
-		return
-	}
-	fmt.Println("libraries:")
-	for index, candidate := range candidates {
-		fmt.Printf(
-			"%d. %s score=%.3f compatible=%t category=%s runtime=%s reason=%s\n",
-			index+1,
-			displayLibraryName(candidate.Library),
-			candidate.Score,
-			candidate.Compatible,
-			displayLibraryCategory(candidate.Library),
-			displayLibraryRuntime(candidate.Library),
-			candidate.Reason,
-		)
-	}
-}
-
-func displayLibraryName(library domain.Library) string {
-	if strings.TrimSpace(library.Name) != "" {
-		return library.Name
-	}
-	return library.ID
-}
-
-func displayLibraryCategory(library domain.Library) string {
-	if strings.TrimSpace(library.Category) != "" {
-		return library.Category
-	}
-	return library.Manifest.Category
-}
-
-func displayLibraryRuntime(library domain.Library) string {
-	return library.Manifest.Runtime
-}
 func printSearchResults(result domain.RetrievalResult) {
 	if len(result.Candidates) == 0 {
 		fmt.Println("no matching tools found")
@@ -341,6 +367,46 @@ func printSearchResults(result domain.RetrievalResult) {
 	}
 }
 
+func printLibraryResults(candidates []domain.LibraryCandidate) {
+	if len(candidates) == 0 {
+		fmt.Println("no matching libraries found")
+		return
+	}
+	fmt.Println("libraries:")
+	for index, candidate := range candidates {
+		fmt.Printf(
+			"%d. %s score=%.3f compatible=%t category=%s runtime=%s reason=%s\n",
+			index+1,
+			displayLibraryName(candidate.Library),
+			candidate.Score,
+			candidate.Compatible,
+			displayLibraryCategory(candidate.Library),
+			displayLibraryRuntime(candidate.Library),
+			candidate.Reason,
+		)
+	}
+}
+
+func printDependencyGraph(graph domain.DependencyGraph) {
+	if len(graph.Nodes) == 0 {
+		fmt.Println("dependency graph is empty")
+		return
+	}
+	fmt.Printf("dependency graph: %s health=%s\n", graph.Nodes[0].ID, graph.HealthStatus)
+	fmt.Println("nodes:")
+	for _, node := range graph.Nodes {
+		fmt.Printf("- %s %s version=%s\n", node.Kind, node.ID, node.Version)
+	}
+	if len(graph.Edges) == 0 {
+		fmt.Println("edges: none")
+		return
+	}
+	fmt.Println("edges:")
+	for _, edge := range graph.Edges {
+		fmt.Printf("- %s -> %s (%s)\n", edge.FromID, edge.ToID, edge.Kind)
+	}
+}
+
 func displayToolName(tool domain.Tool) string {
 	if strings.TrimSpace(tool.Name) != "" {
 		return tool.Name
@@ -360,6 +426,32 @@ func displayToolRuntime(tool domain.Tool) string {
 		return tool.Manifest.Runtime
 	}
 	return tool.Manifest.Environment.Runtime
+}
+
+func displayLibraryName(library domain.Library) string {
+	if strings.TrimSpace(library.Name) != "" {
+		return library.Name
+	}
+	return library.ID
+}
+
+func displayLibraryCategory(library domain.Library) string {
+	if strings.TrimSpace(library.Category) != "" {
+		return library.Category
+	}
+	return library.Manifest.Category
+}
+
+func displayLibraryRuntime(library domain.Library) string {
+	return library.Manifest.Runtime
+}
+
+func normalizedQuery(query string, args []string) string {
+	query = strings.TrimSpace(query)
+	if query != "" {
+		return query
+	}
+	return strings.TrimSpace(strings.Join(args, " "))
 }
 
 func setMetadata(metadata map[string]string, key string, value string) {
@@ -428,6 +520,7 @@ func demoLibraryReadme() string {
 Reusable PDF parsing library for generated EvoTool tools.
 `
 }
+
 func demoPDFToExcelTool() domain.Tool {
 	now := time.Now().UTC()
 	return domain.Tool{
@@ -538,8 +631,10 @@ func printUsage() {
 Usage:
   evotool demo save-tool [--root .evotool]
   evotool demo save-library [--root .evotool]
+  evotool demo link-tool-library [--root .evotool]
   evotool search tools --query "pdf excel" [--root .evotool]
   evotool search libraries --query "pdf parser" [--root .evotool]
+  evotool deps graph --id pdf_to_excel [--root .evotool]
   evotool help`)
 }
 
@@ -548,7 +643,8 @@ func printDemoUsage() {
 
 Usage:
   evotool demo save-tool [--root .evotool]
-  evotool demo save-library [--root .evotool]`)
+  evotool demo save-library [--root .evotool]
+  evotool demo link-tool-library [--root .evotool]`)
 }
 
 func printSearchUsage() {
@@ -558,4 +654,11 @@ Usage:
   evotool search tools --query "pdf excel" [--root .evotool]
   evotool search libraries --query "pdf parser" [--root .evotool]
   evotool search tools "pdf excel" --category document_processing --runtime python`)
+}
+
+func printDepsUsage() {
+	fmt.Println(`EvoTool dependency commands
+
+Usage:
+  evotool deps graph --id pdf_to_excel [--root .evotool]`)
 }

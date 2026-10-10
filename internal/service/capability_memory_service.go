@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/AngelaHelloKittyBaby/evotool/internal/domain"
@@ -74,6 +75,100 @@ func (s *CapabilityMemoryService) SearchLibraries(ctx context.Context, query dom
 	return candidates, nil
 }
 
+// LinkToolLibraries records reusable libraries as dependencies of a tool.
+func (s *CapabilityMemoryService) LinkToolLibraries(ctx context.Context, tool domain.Tool, libraries []domain.Library) (domain.DependencyGraph, error) {
+	toolID := capabilityID(tool.ID, tool.Name)
+	if toolID == "" {
+		return domain.DependencyGraph{}, fmt.Errorf("tool id or name is required")
+	}
+	if len(libraries) == 0 {
+		return domain.DependencyGraph{}, fmt.Errorf("at least one library is required")
+	}
+
+	updatedTool := tool
+	updatedTool.ID = firstNonEmpty(tool.ID, toolID)
+	updatedTool.Name = firstNonEmpty(tool.Name, toolID)
+	updatedTool.UpdatedAt = time.Now().UTC()
+	if updatedTool.CreatedAt.IsZero() {
+		updatedTool.CreatedAt = updatedTool.UpdatedAt
+	}
+
+	graph := domain.DependencyGraph{
+		Nodes: []domain.DependencyNode{
+			{
+				ID:      toolID,
+				Name:    updatedTool.Name,
+				Kind:    domain.DependencyTool,
+				Version: updatedTool.CurrentVersion,
+			},
+		},
+		HealthStatus: domain.DependencyHealthy,
+	}
+
+	seenLibraries := map[string]struct{}{}
+	for _, library := range libraries {
+		libraryID := capabilityID(library.ID, library.Name)
+		if libraryID == "" {
+			return domain.DependencyGraph{}, fmt.Errorf("library id or name is required")
+		}
+		if _, exists := seenLibraries[libraryID]; exists {
+			continue
+		}
+		seenLibraries[libraryID] = struct{}{}
+
+		libraryName := firstNonEmpty(library.Name, libraryID)
+		ref := domain.DependencyRef{
+			ID:      libraryID,
+			Name:    libraryName,
+			Kind:    domain.DependencyLibrary,
+			Version: library.CurrentVersion,
+		}
+		updatedTool.Manifest.LibraryRefs = appendUniqueDependency(updatedTool.Manifest.LibraryRefs, ref)
+		updatedTool.Dependencies = appendUniqueDependency(updatedTool.Dependencies, ref)
+
+		graph.Nodes = append(graph.Nodes, domain.DependencyNode{
+			ID:      libraryID,
+			Name:    libraryName,
+			Kind:    domain.DependencyLibrary,
+			Version: library.CurrentVersion,
+		})
+		graph.Edges = append(graph.Edges, domain.DependencyEdge{
+			FromID: toolID,
+			ToID:   libraryID,
+			Kind:   domain.DependencyLibrary,
+		})
+		if strings.TrimSpace(library.CurrentVersion) != "" {
+			graph.VersionConstraints = append(graph.VersionConstraints, domain.VersionConstraint{
+				DependencyID: libraryID,
+				Constraint:   library.CurrentVersion,
+			})
+		}
+	}
+
+	if err := s.tools.Update(ctx, updatedTool); err != nil {
+		return domain.DependencyGraph{}, fmt.Errorf("update tool dependencies: %w", err)
+	}
+	if err := s.registry.UpsertToolMetadata(ctx, updatedTool); err != nil {
+		return domain.DependencyGraph{}, fmt.Errorf("upsert tool metadata: %w", err)
+	}
+	if err := s.registry.SaveDependencyGraph(ctx, graph); err != nil {
+		return domain.DependencyGraph{}, fmt.Errorf("save dependency graph: %w", err)
+	}
+	if err := s.logAudit(ctx, "dependency_graph.saved", domain.AuditSubjectTool, toolID, updatedTool.Name); err != nil {
+		return domain.DependencyGraph{}, err
+	}
+	return graph, nil
+}
+
+// GetDependencyGraph returns a stored dependency graph by its root capability ID.
+func (s *CapabilityMemoryService) GetDependencyGraph(ctx context.Context, rootID string) (domain.DependencyGraph, error) {
+	graph, err := s.registry.GetDependencyGraph(ctx, rootID)
+	if err != nil {
+		return domain.DependencyGraph{}, fmt.Errorf("get dependency graph: %w", err)
+	}
+	return graph, nil
+}
+
 // SaveTool saves a tool and synchronizes its registry metadata.
 func (s *CapabilityMemoryService) SaveTool(ctx context.Context, tool domain.Tool) error {
 	if err := s.tools.Save(ctx, tool); err != nil {
@@ -123,6 +218,31 @@ func (s *CapabilityMemoryService) RecordExecution(ctx context.Context, result do
 		return fmt.Errorf("record execution: %w", err)
 	}
 	return s.logAudit(ctx, "execution.recorded", domain.AuditSubjectExecution, result.ToolID, result.Version)
+}
+
+func appendUniqueDependency(dependencies []domain.DependencyRef, ref domain.DependencyRef) []domain.DependencyRef {
+	for index, dependency := range dependencies {
+		if dependency.Kind == ref.Kind && capabilityID(dependency.ID, dependency.Name) == capabilityID(ref.ID, ref.Name) {
+			dependencies[index] = ref
+			return dependencies
+		}
+	}
+	return append(dependencies, ref)
+}
+
+func capabilityID(id, name string) string {
+	if strings.TrimSpace(id) != "" {
+		return strings.TrimSpace(id)
+	}
+	return strings.TrimSpace(name)
+}
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (s *CapabilityMemoryService) logAudit(ctx context.Context, action string, subjectKind domain.AuditSubjectKind, subjectID, message string) error {

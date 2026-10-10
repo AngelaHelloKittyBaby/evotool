@@ -40,6 +40,15 @@ go run ./cmd/evotool search libraries --query "pdf parser table" --runtime pytho
 
 Library retrieval is intentionally separate from Tool retrieval: a Tool is a top-level callable capability, while a Library is a reusable implementation dependency.
 
+Record and inspect the Tool -> Library dependency graph:
+
+```bash
+go run ./cmd/evotool demo link-tool-library --root .evotool
+go run ./cmd/evotool deps graph --id pdf_to_excel --root .evotool
+```
+
+This records `pdf_to_excel -> pdf_parser` in `.evotool/registry/dependency_graph/pdf_to_excel.json` and updates the tool metadata with a `LibraryRefs` entry.
+
 ## Status
 
 EvoTool is in the early design and MVP stage.
