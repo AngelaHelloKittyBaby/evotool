@@ -231,7 +231,7 @@ Lifecycle Scheduler
 
 这项设计的目标首先是提高检索质量和治理能力，其次才是减少磁盘占用。因为真正影响 Agent 选择质量的通常是候选噪声，而不是 Tool 文件本身占用的空间。
 
-当前 MVP 只完成了生命周期状态和使用统计的基础模型，尚未实现自动扫描、归档、恢复和物理删除。后续 `LifecycleService` 应提供策略配置、扫描报告、dry-run、归档、恢复和受保护删除能力。
+当前 MVP 已实现只读生命周期扫描：`LifecycleService.Scan` 会读取 Tool 元数据，根据使用时间和配置阈值生成 `stale` 与归档候选报告；CLI 可以通过 `evotool lifecycle scan` 进行验收。扫描不会修改 Tool 文件或状态。自动归档、恢复和物理删除仍未实现，后续 `LifecycleService` 应继续提供 dry-run、归档、恢复和受保护删除能力。
 
 ## 5. 完整闭环
 

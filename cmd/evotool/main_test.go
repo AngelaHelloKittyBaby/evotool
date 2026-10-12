@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/AngelaHelloKittyBaby/evotool/internal/adapter/store/filesystem"
 )
 
 func TestRunDemoSaveTool(t *testing.T) {
@@ -86,6 +90,36 @@ func TestRunDepsGraphRequiresID(t *testing.T) {
 func TestRunDepsCheckRequiresID(t *testing.T) {
 	if err := run([]string{"deps", "check"}); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestRunLifecycleScan(t *testing.T) {
+	root := t.TempDir()
+	if err := run([]string{"demo", "save-tool", "--root", root}); err != nil {
+		t.Fatalf("run demo save-tool: %v", err)
+	}
+
+	stores := filesystem.NewStores(root)
+	tool, err := stores.Tools.Get(context.Background(), "pdf_to_excel")
+	if err != nil {
+		t.Fatalf("get demo tool: %v", err)
+	}
+	tool.UpdatedAt = time.Now().UTC().Add(-48 * time.Hour)
+	if err := stores.Tools.Update(context.Background(), tool); err != nil {
+		t.Fatalf("age demo tool: %v", err)
+	}
+
+	if err := run([]string{
+		"lifecycle",
+		"scan",
+		"--root",
+		root,
+		"--stale-days",
+		"1",
+		"--archive-days",
+		"3",
+	}); err != nil {
+		t.Fatalf("run lifecycle scan: %v", err)
 	}
 }
 

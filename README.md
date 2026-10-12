@@ -50,6 +50,14 @@ go run ./cmd/evotool deps check --id pdf_to_excel --root .evotool
 
 This records `pdf_to_excel -> pdf_parser` in `.evotool/registry/dependency_graph/pdf_to_excel.json`, updates the tool metadata with a `LibraryRefs` entry, and verifies that the referenced Library exists with a compatible version.
 
+Preview Tools that have been inactive for a long time:
+
+```bash
+go run ./cmd/evotool lifecycle scan --root .evotool
+```
+
+The default policy marks Tools unused for 90 days as `stale` candidates and Tools unused for 180 days as archive candidates. This command is read-only: it reports candidates but does not change or delete any files.
+
 ## Status
 
 EvoTool is in the early design and MVP stage.

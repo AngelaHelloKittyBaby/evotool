@@ -34,6 +34,8 @@ func run(args []string) error {
 		return runSearch(args[1:])
 	case "deps":
 		return runDeps(args[1:])
+	case "lifecycle":
+		return runLifecycle(args[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return nil
@@ -131,6 +133,36 @@ func runDeps(args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("unknown deps command %q", args[0])
+	}
+}
+
+func runLifecycle(args []string) error {
+	if len(args) == 0 {
+		printLifecycleUsage()
+		return nil
+	}
+
+	switch args[0] {
+	case "scan":
+		flags := flag.NewFlagSet("lifecycle scan", flag.ContinueOnError)
+		root := flags.String("root", filesystem.DefaultRoot, "EvoTool memory root directory")
+		staleDays := flags.Int("stale-days", 90, "days without use before a Tool becomes stale")
+		archiveDays := flags.Int("archive-days", 180, "days without use before a Tool becomes an archive candidate")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *staleDays <= 0 {
+			return fmt.Errorf("stale-days must be greater than zero")
+		}
+		if *archiveDays <= *staleDays {
+			return fmt.Errorf("archive-days must be greater than stale-days")
+		}
+		return scanLifecycle(*root, *staleDays, *archiveDays)
+	case "help", "-h", "--help":
+		printLifecycleUsage()
+		return nil
+	default:
+		return fmt.Errorf("unknown lifecycle command %q", args[0])
 	}
 }
 
@@ -352,6 +384,27 @@ func checkDependencies(root string, id string) error {
 	return nil
 }
 
+func scanLifecycle(root string, staleDays int, archiveDays int) error {
+	stores := filesystem.NewStores(root)
+	lifecycle, err := service.NewLifecycleService(service.LifecycleServiceConfig{
+		ToolStore: stores.Tools,
+		Policy: domain.LifecyclePolicy{
+			StaleAfter:   time.Duration(staleDays) * 24 * time.Hour,
+			ArchiveAfter: time.Duration(archiveDays) * 24 * time.Hour,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create lifecycle service: %w", err)
+	}
+
+	report, err := lifecycle.Scan(context.Background())
+	if err != nil {
+		return fmt.Errorf("scan lifecycle: %w", err)
+	}
+	printLifecycleScanReport(report, staleDays, archiveDays)
+	return nil
+}
+
 func newCapabilityMemory(root string) (*service.CapabilityMemoryService, error) {
 	stores := filesystem.NewStores(root)
 	memory, err := service.NewCapabilityMemoryService(service.CapabilityMemoryServiceConfig{
@@ -441,6 +494,36 @@ func printDependencyCheckResult(result domain.DependencyCheckResult) {
 	for _, issue := range result.Issues {
 		fmt.Printf("- %s %s status=%s %s\n", issue.Kind, issue.DependencyID, issue.Status, issue.Message)
 	}
+}
+
+func printLifecycleScanReport(report domain.LifecycleScanReport, staleDays int, archiveDays int) {
+	fmt.Printf(
+		"lifecycle scan: tools=%d candidates=%d stale_after=%dd archive_after=%dd\n",
+		report.TotalTools,
+		len(report.Candidates),
+		staleDays,
+		archiveDays,
+	)
+	if len(report.Candidates) == 0 {
+		fmt.Println("candidates: none")
+		fmt.Println("read-only scan: no files changed")
+		return
+	}
+
+	fmt.Println("candidates:")
+	for _, candidate := range report.Candidates {
+		fmt.Printf(
+			"- %s current=%s proposed=%s action=%s idle=%s last_activity=%s reason=%s\n",
+			candidate.ToolID,
+			candidate.CurrentStatus,
+			candidate.ProposedStatus,
+			candidate.Action,
+			candidate.IdleFor.Round(time.Second),
+			candidate.LastActivityAt.Format(time.RFC3339),
+			candidate.Reason,
+		)
+	}
+	fmt.Println("read-only scan: no files changed")
 }
 
 func displayToolName(tool domain.Tool) string {
@@ -672,6 +755,7 @@ Usage:
   evotool search libraries --query "pdf parser" [--root .evotool]
   evotool deps graph --id pdf_to_excel [--root .evotool]
   evotool deps check --id pdf_to_excel [--root .evotool]
+  evotool lifecycle scan [--root .evotool] [--stale-days 90] [--archive-days 180]
   evotool help`)
 }
 
@@ -699,4 +783,11 @@ func printDepsUsage() {
 Usage:
   evotool deps graph --id pdf_to_excel [--root .evotool]
   evotool deps check --id pdf_to_excel [--root .evotool]`)
+}
+
+func printLifecycleUsage() {
+	fmt.Println(`EvoTool lifecycle commands
+
+Usage:
+  evotool lifecycle scan [--root .evotool] [--stale-days 90] [--archive-days 180]`)
 }

@@ -145,16 +145,29 @@ retention:
 - 生成删除候选。
 - 记录生命周期审计事件。
 
-计划中的 CLI 形式：
+当前已经实现的只读扫描命令：
 
 ```powershell
 go run ./cmd/evotool lifecycle scan --root .evotool
+```
+
+默认策略是 90 天进入 `stale` 候选，180 天进入归档候选。可以通过参数调整：
+
+```powershell
+go run ./cmd/evotool lifecycle scan --root .evotool --stale-days 30 --archive-days 90
+```
+
+该命令只读取并输出候选，不会修改 Tool 文件或生命周期状态。
+
+后续计划中的 CLI 形式：
+
+```powershell
 go run ./cmd/evotool lifecycle archive --dry-run --root .evotool
 go run ./cmd/evotool lifecycle restore --id pdf_to_excel --root .evotool
 go run ./cmd/evotool lifecycle purge --dry-run --root .evotool
 ```
 
-这些命令目前是设计目标，尚未代表当前版本已经实现。
+`archive`、`restore` 和 `purge` 目前是设计目标，尚未代表当前版本已经实现。
 
 ## 7. 安全要求
 

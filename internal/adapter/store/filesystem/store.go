@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/AngelaHelloKittyBaby/evotool/internal/domain"
@@ -132,6 +133,46 @@ func (s *ToolStore) Get(ctx context.Context, id string) (domain.Tool, error) {
 }
 
 // Update 更新 Tool，本地文件系统实现与 Save 相同。
+// List returns all Tool metadata stored in the local capability memory.
+func (s *ToolStore) List(ctx context.Context) ([]domain.Tool, error) {
+	if err := checkContext(ctx); err != nil {
+		return nil, err
+	}
+
+	dir := filepath.Join(s.root, "tools")
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read tools directory: %w", err)
+	}
+
+	tools := make([]domain.Tool, 0, len(entries))
+	for _, entry := range entries {
+		if err := checkContext(ctx); err != nil {
+			return nil, err
+		}
+		if !entry.IsDir() {
+			continue
+		}
+
+		var tool domain.Tool
+		path := filepath.Join(dir, entry.Name(), "metadata.json")
+		if err := readJSON(path, &tool); err != nil {
+			return nil, fmt.Errorf("read tool metadata %s: %w", entry.Name(), err)
+		}
+		tools = append(tools, tool)
+	}
+
+	sort.SliceStable(tools, func(i, j int) bool {
+		left := firstNonEmpty(tools[i].ID, tools[i].Name)
+		right := firstNonEmpty(tools[j].ID, tools[j].Name)
+		return left < right
+	})
+	return tools, nil
+}
+
 func (s *ToolStore) Update(ctx context.Context, tool domain.Tool) error {
 	return s.Save(ctx, tool)
 }
@@ -266,6 +307,15 @@ func objectKey(id, name string) (string, error) {
 		return safeSegment(name)
 	}
 	return safeSegment(id)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func safeSegment(value string) (string, error) {

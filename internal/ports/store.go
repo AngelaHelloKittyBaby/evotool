@@ -10,6 +10,7 @@ import (
 type ToolStore interface {
 	Save(ctx context.Context, tool domain.Tool) error
 	Get(ctx context.Context, id string) (domain.Tool, error)
+	List(ctx context.Context) ([]domain.Tool, error)
 	Update(ctx context.Context, tool domain.Tool) error
 }
 
