@@ -8,6 +8,8 @@ EvoTool helps AI agents turn one-off generated scripts into validated, searchabl
 
 ## Quick Start
 
+External agents can now submit Python tool packages for sandbox validation and reuse. See [the learning workflow and one-command acceptance test](docs/learning.md). This path requires a running Docker Linux engine and a prepared Python image; it does not embed an LLM.
+
 Save a demo generated tool into local capability memory:
 
 ```bash
@@ -61,6 +63,8 @@ The default policy marks Tools unused for 90 days as `stale` candidates and Tool
 ## Status
 
 EvoTool is in the early design and MVP stage.
+
+The execution policy service checks lifecycle, validation trust, version presence, and explicit host resource ceilings. `ExecutionService` coordinates dependency checks, policy checks, audit events, executor calls, and execution history. The external submission workflow now validates dependency-free Python tools and executes them through a Docker sandbox. Privileged submissions are rejected; model generation, executable shared-library dependencies, and a review approval interface are not implemented yet. See [the learning workflow](docs/learning.md) and [the security model](docs/security.md).
 
 ## Core Idea
 

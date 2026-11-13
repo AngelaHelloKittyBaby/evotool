@@ -46,4 +46,6 @@ pnpm-debug.log*
 .evotool/
 tool_memory/
 sandbox/
+!internal/adapter/sandbox/
+!internal/adapter/sandbox/**
 tmp/

@@ -4,19 +4,21 @@ import "time"
 
 // Tool 表示 EvoTool 学到或注册的一个可复用顶层能力。
 type Tool struct {
-	ID              string
-	Name            string
-	Description     string
-	Category        string
-	Manifest        ToolManifest
-	CurrentVersion  string
-	Versions        []ToolVersion
-	Dependencies    []DependencyRef
-	UsageStats      ToolUsageStats
-	LifecycleStatus LifecycleStatus
-	TrustLevel      TrustLevel
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID               string
+	Name             string
+	Description      string
+	Category         string
+	Manifest         ToolManifest
+	CurrentVersion   string
+	Versions         []ToolVersion
+	Dependencies     []DependencyRef
+	UsageStats       ToolUsageStats
+	LifecycleStatus  LifecycleStatus
+	TrustLevel       TrustLevel
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	Validation       *ValidationResult
+	GenerationReason string
 }
 
 // ToolManifest 描述工具的机器可读契约。

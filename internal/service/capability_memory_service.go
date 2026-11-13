@@ -19,6 +19,7 @@ type CapabilityMemoryServiceConfig struct {
 	AuditLogger       ports.AuditLogger
 	RetrievalService  *RetrievalService
 	LibraryRetriever  ports.LibraryRetriever
+	ExecutionService  *ExecutionService
 }
 
 // CapabilityMemoryService provides the main application operations for EvoTool memory.
@@ -31,6 +32,7 @@ type CapabilityMemoryService struct {
 	retrieval        *RetrievalService
 	libraryRetriever ports.LibraryRetriever
 	dependency       *DependencyService
+	execution        *ExecutionService
 }
 
 // NewCapabilityMemoryService creates the capability memory facade.
@@ -62,7 +64,16 @@ func NewCapabilityMemoryService(config CapabilityMemoryServiceConfig) (*Capabili
 		retrieval:        config.RetrievalService,
 		libraryRetriever: config.LibraryRetriever,
 		dependency:       dependency,
+		execution:        config.ExecutionService,
 	}, nil
+}
+
+// ExecuteTool delegates checked execution to the configured execution service.
+func (s *CapabilityMemoryService) ExecuteTool(ctx context.Context, id string, task domain.TaskSpec, input map[string]any) (domain.ExecutionResult, error) {
+	if s.execution == nil {
+		return domain.ExecutionResult{}, fmt.Errorf("%w: execution service", ErrMissingDependency)
+	}
+	return s.execution.ExecuteTool(ctx, id, task, input)
 }
 
 // SearchTools searches reusable tools for a task.

@@ -54,6 +54,25 @@ func TestToolStoreSaveAndGet(t *testing.T) {
 	assertFile(t, filepath.Join(root, "tools", "pdf_to_excel", "versions", "v1", "tests", "test_main.py"))
 }
 
+func TestStoresRoundTripDistinctIDAndName(t *testing.T) {
+	ctx := context.Background()
+	stores := NewStores(t.TempDir())
+	tool := domain.Tool{ID: "tool-123", Name: "pdf_to_excel"}
+	if err := stores.Tools.Save(ctx, tool); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stores.Tools.Get(ctx, tool.ID); err != nil {
+		t.Fatalf("get tool by its ID: %v", err)
+	}
+	library := domain.Library{ID: "library-123", Name: "pdf_parser"}
+	if err := stores.Libraries.Save(ctx, library); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stores.Libraries.Get(ctx, library.ID); err != nil {
+		t.Fatalf("get library by its ID: %v", err)
+	}
+}
+
 func TestLibraryStoreSaveAndGet(t *testing.T) {
 	root := t.TempDir()
 	store := NewLibraryStore(root)

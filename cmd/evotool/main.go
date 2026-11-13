@@ -28,6 +28,8 @@ func run(args []string) error {
 	}
 
 	switch args[0] {
+	case "learn", "execute":
+		return runToolWorkflow(args[0], args[1:])
 	case "demo":
 		return runDemo(args[1:])
 	case "search":
@@ -748,6 +750,8 @@ func printUsage() {
 	fmt.Println(`EvoTool
 
 Usage:
+  evotool learn --package generated.json [--root .evotool] [--image python:3.13-alpine]
+  evotool execute --id csv_analyzer --input input.json [--root .evotool]
   evotool demo save-tool [--root .evotool]
   evotool demo save-library [--root .evotool]
   evotool demo link-tool-library [--root .evotool]

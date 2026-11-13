@@ -303,10 +303,10 @@ func normalizeRoot(root string) string {
 }
 
 func objectKey(id, name string) (string, error) {
-	if strings.TrimSpace(name) != "" {
-		return safeSegment(name)
+	if strings.TrimSpace(id) != "" {
+		return safeSegment(id)
 	}
-	return safeSegment(id)
+	return safeSegment(name)
 }
 
 func firstNonEmpty(values ...string) string {
