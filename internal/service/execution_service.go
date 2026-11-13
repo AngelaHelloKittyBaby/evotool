@@ -15,6 +15,8 @@ import (
 var ErrExecutionDenied = errors.New("execution denied")
 
 // ExecutionServiceConfig supplies the required execution boundaries.
+// UsageRecorder is optional: omitting it keeps execution history only and
+// leaves ranker statistics frozen at their defaults.
 type ExecutionServiceConfig struct {
 	ToolStore    ports.ToolStore
 	Dependencies ports.DependencyResolver
@@ -22,6 +24,7 @@ type ExecutionServiceConfig struct {
 	Executor     ports.ToolExecutor
 	Recorder     ports.ExecutionRecorder
 	Audit        ports.AuditLogger
+	Usage        ports.UsageRecorder
 }
 
 // ExecutionService orchestrates checked execution and durable result reporting.
@@ -45,7 +48,8 @@ func NewExecutionService(c ExecutionServiceConfig) (*ExecutionService, error) {
 }
 
 // ExecuteTool loads the stored version, checks dependencies and policy, and
-// records both blocked attempts and executor failures. Callers receive the result
+// records both blocked attempts and executor failures. Only outcomes from an
+// executor that actually ran update usage statistics. Callers receive the result
 // even when execution or subsequent persistence fails.
 func (s *ExecutionService) ExecuteTool(ctx context.Context, id string, task domain.TaskSpec, input map[string]any) (domain.ExecutionResult, error) {
 	if err := checkContext(ctx); err != nil {
@@ -65,7 +69,7 @@ func (s *ExecutionService) ExecuteTool(ctx context.Context, id string, task doma
 	fail := func(err error) (domain.ExecutionResult, error) {
 		result.Success = false
 		result.Error = err.Error()
-		return s.finish(ctx, result, err)
+		return s.finish(ctx, result, false, err)
 	}
 	found := false
 	for _, version := range tool.Versions {
@@ -99,6 +103,7 @@ func (s *ExecutionService) ExecuteTool(ctx context.Context, id string, task doma
 	executed, execErr := s.config.Executor.Execute(ctx, tool, input)
 	// Identity and timestamps belong to this invocation, not adapter output.
 	executed.ToolID, executed.Version, executed.StartedAt = result.ToolID, result.Version, result.StartedAt
+	// From here on the executor ran, so the outcome is usage experience.
 	if execErr != nil {
 		executed.Success = false
 		executed.Error = strings.TrimSpace(strings.Join([]string{executed.Error, execErr.Error()}, " "))
@@ -109,10 +114,13 @@ func (s *ExecutionService) ExecuteTool(ctx context.Context, id string, task doma
 		}
 		execErr = fmt.Errorf("execute tool: %s", executed.Error)
 	}
-	return s.finish(ctx, executed, execErr)
+	return s.finish(ctx, executed, true, execErr)
 }
 
-func (s *ExecutionService) finish(ctx context.Context, result domain.ExecutionResult, cause error) (domain.ExecutionResult, error) {
+// finish persists the invocation. executed reports whether the executor actually
+// ran: policy blocks and dependency failures only write history and audit, while
+// executor outcomes also update the usage statistics the ranker scores on.
+func (s *ExecutionService) finish(ctx context.Context, result domain.ExecutionResult, executed bool, cause error) (domain.ExecutionResult, error) {
 	result.FinishedAt = time.Now().UTC()
 	result.Duration = result.FinishedAt.Sub(result.StartedAt)
 	// Cancellation must not discard the failure record; persistence is bounded.
@@ -120,6 +128,11 @@ func (s *ExecutionService) finish(ctx context.Context, result domain.ExecutionRe
 	defer cancel()
 	if err := s.config.Recorder.RecordExecution(recordCtx, result); err != nil {
 		cause = errors.Join(cause, fmt.Errorf("record execution: %w", err))
+	}
+	if executed && s.config.Usage != nil {
+		if err := s.config.Usage.RecordUsage(recordCtx, result); err != nil {
+			cause = errors.Join(cause, fmt.Errorf("record usage: %w", err))
+		}
 	}
 	action := "execution.completed"
 	if !result.Success {

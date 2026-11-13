@@ -13,9 +13,11 @@ type executionFixture struct {
 	health                                                          domain.DependencyHealthStatus
 	decision                                                        domain.PolicyDecision
 	loadErr, dependencyErr, policyErr, execErr, recordErr, auditErr error
+	usageErr                                                        error
 	executed                                                        domain.ExecutionResult
 	calls                                                           []string
 	results                                                         []domain.ExecutionResult
+	usages                                                          []domain.ExecutionResult
 	cancel                                                          context.CancelFunc
 }
 
@@ -57,11 +59,17 @@ func (f *executionFixture) Log(_ context.Context, e domain.AuditEvent) error {
 	return f.auditErr
 }
 
+func (f *executionFixture) RecordUsage(_ context.Context, r domain.ExecutionResult) error {
+	f.calls = append(f.calls, "usage")
+	f.usages = append(f.usages, r)
+	return f.usageErr
+}
+
 func newExecutionFixture() *executionFixture {
 	return &executionFixture{tool: domain.Tool{ID: "csv_analyzer", CurrentVersion: "v1", Versions: []domain.ToolVersion{{Version: "v1"}}}, health: domain.DependencyHealthy, decision: domain.PolicyDecision{Allowed: true}, executed: domain.ExecutionResult{Success: true, Output: "report", ToolID: "spoof", Version: "wrong"}}
 }
 func (f *executionFixture) config() ExecutionServiceConfig {
-	return ExecutionServiceConfig{ToolStore: f, Dependencies: f, Policy: f, Executor: f, Recorder: f, Audit: f}
+	return ExecutionServiceConfig{ToolStore: f, Dependencies: f, Policy: f, Executor: f, Recorder: f, Audit: f, Usage: f}
 }
 
 func TestExecutionServicePaths(t *testing.T) {
@@ -105,6 +113,10 @@ func TestExecutionServicePaths(t *testing.T) {
 			if didExecute != tt.execute || (len(f.results) > 0) != tt.record {
 				t.Fatalf("unexpected calls: %v", f.calls)
 			}
+			// Usage statistics only move when the executor actually ran.
+			if (len(f.usages) > 0) != tt.execute {
+				t.Fatalf("usage recorded without execution: %v", f.calls)
+			}
 			if tt.record && (r.ToolID != "csv_analyzer" || r.Version != "v1" || r.StartedAt.IsZero() || r.FinishedAt.Before(r.StartedAt)) {
 				t.Fatalf("invalid result: %+v", r)
 			}
@@ -115,7 +127,7 @@ func TestExecutionServicePaths(t *testing.T) {
 				t.Fatal("blocked execution marked successful")
 			}
 			if !tt.wantErr {
-				want := []string{"load", "dependencies", "policy", "execution.started", "execute", "record", "execution.completed"}
+				want := []string{"load", "dependencies", "policy", "execution.started", "execute", "record", "usage", "execution.completed"}
 				if len(want) != len(f.calls) {
 					t.Fatalf("calls: %v", f.calls)
 				}
@@ -139,6 +151,48 @@ func TestExecutionServiceCancellationRecordsFailure(t *testing.T) {
 	r, err := s.ExecuteTool(ctx, "csv_analyzer", domain.TaskSpec{}, nil)
 	if !errors.Is(err, context.Canceled) || r.Success || len(f.results) != 1 {
 		t.Fatalf("result=%+v records=%d error=%v", r, len(f.results), err)
+	}
+}
+
+func TestExecutionServiceRecordsExecutorFailureAsUsage(t *testing.T) {
+	f := newExecutionFixture()
+	f.execErr = errors.New("sandbox died")
+	s, _ := NewExecutionService(f.config())
+	if _, err := s.ExecuteTool(context.Background(), "csv_analyzer", domain.TaskSpec{}, nil); err == nil {
+		t.Fatal("expected executor error")
+	}
+	if len(f.usages) != 1 || f.usages[0].Success {
+		t.Fatalf("expected one failed usage record, got %+v", f.usages)
+	}
+}
+
+func TestExecutionServiceUsageFailureDoesNotDropResult(t *testing.T) {
+	boom := errors.New("usage store down")
+	f := newExecutionFixture()
+	f.usageErr = boom
+	s, _ := NewExecutionService(f.config())
+	result, err := s.ExecuteTool(context.Background(), "csv_analyzer", domain.TaskSpec{}, nil)
+	if !errors.Is(err, boom) {
+		t.Fatalf("usage error not propagated: %v", err)
+	}
+	if !result.Success || result.Output != "report" {
+		t.Fatalf("execution result lost: %+v", result)
+	}
+}
+
+func TestExecutionServiceUsageIsOptional(t *testing.T) {
+	f := newExecutionFixture()
+	config := f.config()
+	config.Usage = nil
+	s, err := NewExecutionService(config)
+	if err != nil {
+		t.Fatalf("usage recorder must be optional: %v", err)
+	}
+	if _, err := s.ExecuteTool(context.Background(), "csv_analyzer", domain.TaskSpec{}, nil); err != nil {
+		t.Fatalf("execute without usage recorder: %v", err)
+	}
+	if len(f.usages) != 0 || len(f.results) != 1 {
+		t.Fatalf("usages=%d records=%d", len(f.usages), len(f.results))
 	}
 }
 

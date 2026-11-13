@@ -87,6 +87,36 @@ type ToolUsageStats struct {
 	LastUsedAt     time.Time
 }
 
+// DefaultRetrievableStatuses 是未显式指定状态过滤时参与检索的生命周期状态。
+// archived、quarantined、deleted、draft、validated 默认不参与检索；
+// 调用方可以显式设置 RetrievalFilters.AllowedStatuses 覆盖该默认值。
+func DefaultRetrievableStatuses() []LifecycleStatus {
+	return []LifecycleStatus{LifecycleApproved, LifecycleActive, LifecycleStale}
+}
+
+// ApplyExecutionResult 把一次真实执行的结果折叠进累计使用统计。
+// 调用方只能折叠执行器实际运行过的结果；策略拒绝等未执行的尝试不属于使用经验，
+// 否则需要审查的工具会因为被拦截而看起来不可靠。
+func ApplyExecutionResult(stats ToolUsageStats, result ExecutionResult) ToolUsageStats {
+	previousCount := stats.UsageCount
+	stats.UsageCount = previousCount + 1
+	if result.Success {
+		stats.SuccessCount++
+	} else {
+		stats.FailureCount++
+	}
+	stats.SuccessRate = float64(stats.SuccessCount) / float64(stats.UsageCount)
+	if result.Duration > 0 {
+		// 已执行的结果都带耗时，因此 UsageCount-1 就是此前的样本数。
+		total := stats.AverageLatency*time.Duration(previousCount) + result.Duration
+		stats.AverageLatency = total / time.Duration(stats.UsageCount)
+	}
+	if result.FinishedAt.After(stats.LastUsedAt) {
+		stats.LastUsedAt = result.FinishedAt
+	}
+	return stats
+}
+
 // CapabilityRankScore 表示综合排序分数及其组成部分。
 type CapabilityRankScore struct {
 	SemanticSimilarity float64

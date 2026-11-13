@@ -149,7 +149,7 @@ active
   -> 满足全部条件后才允许人工确认删除
 ```
 
-默认检索只选择 `active`、`approved` 等可用状态。若正常检索没有结果，可以由 Agent 或管理员显式查询 `archived` 工具，避免低频但重要的年度报表、应急修复和季节性工具被永久丢失。
+默认检索只选择 `approved`、`active`、`stale` 三种状态，实现位于 `domain.DefaultRetrievableStatuses()`。`archived`、`quarantined`、`deleted`、`draft`、`validated` 不会出现在默认搜索结果中，调用方可以用 `RetrievalFilters.AllowedStatuses` 显式覆盖。若正常检索没有结果，可以由 Agent 或管理员显式查询 `archived` 工具，避免低频但重要的年度报表、应急修复和季节性工具被永久丢失。
 
 删除前必须确认：
 
@@ -250,6 +250,8 @@ Ranking should combine:
 - Dependency health
 
 This means EvoTool should know not only which tool is similar, but which tool is more reliable.
+
+Execution outcomes now feed back into that ranking. After an executor actually runs, `ExecutionService` folds the result into the stored `UsageStats` and both metadata copies, so repeated successes raise a tool's score and repeated failures lower it. Calls blocked by policy or dependency checks are recorded in history and audit but do not count as usage experience.
 ## What EvoTool Aims To Provide
 
 - Tool Memory for generated tools

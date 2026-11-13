@@ -297,7 +297,8 @@ func linkDemoToolLibrary(root string) error {
 }
 
 func searchTools(options searchToolOptions) error {
-	filters := domain.RetrievalFilters{Runtime: options.runtime}
+	// Default retrieval never surfaces archived, quarantined, or deleted Tools.
+	filters := domain.RetrievalFilters{Runtime: options.runtime, AllowedStatuses: domain.DefaultRetrievableStatuses()}
 	if options.noNetwork {
 		allowed := false
 		filters.NetworkAllowed = &allowed
@@ -338,8 +339,9 @@ func searchLibraries(options searchToolOptions) error {
 	}
 
 	query := domain.RetrievalQuery{
-		Intent: options.query,
-		Limit:  options.limit,
+		Intent:  options.query,
+		Limit:   options.limit,
+		Filters: domain.RetrievalFilters{AllowedStatuses: domain.DefaultRetrievableStatuses()},
 	}
 	if options.category != "" {
 		query.Categories = []string{options.category}

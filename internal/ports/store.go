@@ -34,6 +34,12 @@ type ExecutionRecorder interface {
 	RecordExecution(ctx context.Context, result domain.ExecutionResult) error
 }
 
+// UsageRecorder 把一次真实执行折叠进 Tool 的累计使用统计。
+// 它必须是幂等边界之外的一步：执行历史被追加后，统计才可随之更新。
+type UsageRecorder interface {
+	RecordUsage(ctx context.Context, result domain.ExecutionResult) error
+}
+
 // AuditLogger 记录生成、验证、执行、审查、升级等审计事件。
 type AuditLogger interface {
 	Log(ctx context.Context, event domain.AuditEvent) error

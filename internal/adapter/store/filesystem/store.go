@@ -46,6 +46,11 @@ type AuditLogger struct {
 	root string
 }
 
+// UsageRecorder 把执行结果折叠进 Tool 的累计使用统计。
+type UsageRecorder struct {
+	root string
+}
+
 // Stores 聚合文件系统 Adapter 的所有存储实现。
 type Stores struct {
 	Tools      *ToolStore
@@ -53,6 +58,7 @@ type Stores struct {
 	Registry   *RegistryStore
 	Executions *ExecutionRecorder
 	Audit      *AuditLogger
+	Usage      *UsageRecorder
 }
 
 // NewStores 创建一组共享相同 root 的文件系统存储实现。
@@ -64,6 +70,7 @@ func NewStores(root string) Stores {
 		Registry:   NewRegistryStore(root),
 		Executions: NewExecutionRecorder(root),
 		Audit:      NewAuditLogger(root),
+		Usage:      NewUsageRecorder(root),
 	}
 }
 
@@ -90,6 +97,11 @@ func NewExecutionRecorder(root string) *ExecutionRecorder {
 // NewAuditLogger 创建 AuditLogger。
 func NewAuditLogger(root string) *AuditLogger {
 	return &AuditLogger{root: normalizeRoot(root)}
+}
+
+// NewUsageRecorder 创建 UsageRecorder。
+func NewUsageRecorder(root string) *UsageRecorder {
+	return &UsageRecorder{root: normalizeRoot(root)}
 }
 
 // Save 保存 Tool 本体、manifest 和版本文件。
@@ -293,6 +305,39 @@ func (l *AuditLogger) Log(ctx context.Context, event domain.AuditEvent) error {
 		return err
 	}
 	return appendJSONLine(filepath.Join(l.root, "registry", "audit", "events.jsonl"), event)
+}
+
+// RecordUsage folds one execution into the stored Tool usage statistics.
+// Filesystem storage has no cross-file transaction: the Tool metadata and the
+// registry metadata copy are written separately, so a crash between them leaves
+// the two views temporarily inconsistent. Both are rewritten from the same
+// aggregate, so a later execution repairs the divergence.
+func (u *UsageRecorder) RecordUsage(ctx context.Context, result domain.ExecutionResult) error {
+	if err := checkContext(ctx); err != nil {
+		return err
+	}
+	key, err := safeSegment(result.ToolID)
+	if err != nil {
+		return fmt.Errorf("usage tool key: %w", err)
+	}
+
+	var tool domain.Tool
+	if err := readJSON(filepath.Join(u.root, "tools", key, "metadata.json"), &tool); err != nil {
+		return fmt.Errorf("read tool metadata for usage: %w", err)
+	}
+	tool.UsageStats = domain.ApplyExecutionResult(tool.UsageStats, result)
+	tool.UpdatedAt = result.FinishedAt
+	if tool.UpdatedAt.IsZero() {
+		tool.UpdatedAt = tool.UsageStats.LastUsedAt
+	}
+
+	if err := writeJSON(filepath.Join(u.root, "tools", key, "metadata.json"), tool); err != nil {
+		return fmt.Errorf("write tool usage statistics: %w", err)
+	}
+	if err := writeJSON(filepath.Join(u.root, "registry", "metadata", "tools", key+".json"), tool); err != nil {
+		return fmt.Errorf("write tool usage metadata: %w", err)
+	}
+	return nil
 }
 
 func normalizeRoot(root string) string {

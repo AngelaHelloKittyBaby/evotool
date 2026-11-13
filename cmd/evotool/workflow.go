@@ -66,7 +66,7 @@ func runToolWorkflow(command string, args []string) error {
 	if err != nil {
 		return err
 	}
-	execution, err := service.NewExecutionService(service.ExecutionServiceConfig{ToolStore: stores.Tools, Dependencies: dependencies, Policy: policy, Executor: pythonexecutor.Executor{Sandbox: sandbox}, Recorder: stores.Executions, Audit: stores.Audit})
+	execution, err := service.NewExecutionService(service.ExecutionServiceConfig{ToolStore: stores.Tools, Dependencies: dependencies, Policy: policy, Executor: pythonexecutor.Executor{Sandbox: sandbox}, Recorder: stores.Executions, Audit: stores.Audit, Usage: stores.Usage})
 	if err != nil {
 		return err
 	}
