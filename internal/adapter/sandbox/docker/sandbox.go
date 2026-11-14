@@ -1,4 +1,4 @@
-// Package docker runs untrusted Python in disposable Linux containers.
+// Package docker 在一次性 Linux 容器中运行不可信的 Python 代码。
 package docker
 
 import (
@@ -13,10 +13,10 @@ import (
 	"github.com/AngelaHelloKittyBaby/evotool/internal/ports"
 )
 
-// Sandbox requires a locally available image; it never pulls implicitly.
+// Sandbox 要求本地已有镜像；它不会隐式拉取。
 type Sandbox struct{ Image string }
 
-// Run transfers source over stdin without mounting host directories or secrets.
+// Run 通过 stdin 传输源码，不挂载宿主目录，也不传递密钥。
 func (s Sandbox) Run(ctx context.Context, r ports.SandboxRequest) (ports.SandboxResult, error) {
 	if s.Image == "" || r.Runtime != "python" || len(r.Command) != 1 {
 		return ports.SandboxResult{}, fmt.Errorf("image, python runtime and one entry point required")
@@ -38,7 +38,7 @@ func (s Sandbox) Run(ctx context.Context, r ports.SandboxRequest) (ports.Sandbox
 	}
 	deadline, cancel := context.WithTimeout(ctx, time.Duration(l.MaxRuntimeMs)*time.Millisecond)
 	defer cancel()
-	// A unique name lets cleanup remove the container even after client timeout.
+	// 唯一的容器名让清理逻辑在客户端超时后仍能移除容器。
 	name := "evotool-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)

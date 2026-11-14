@@ -1,4 +1,4 @@
-// Package python adapts a sandbox to Python tool execution.
+// Package python 把沙箱适配为 Python 工具执行器。
 package python
 
 import (
@@ -9,10 +9,10 @@ import (
 	"github.com/AngelaHelloKittyBaby/evotool/internal/ports"
 )
 
-// Executor delegates all generated code to its sandbox.
+// Executor 把所有生成代码交由沙箱执行。
 type Executor struct{ Sandbox ports.Sandbox }
 
-// Execute runs the exact current version and requires JSON object output.
+// Execute 运行当前版本的原始代码，并要求输出 JSON 对象。
 func (e Executor) Execute(ctx context.Context, t domain.Tool, input map[string]any) (domain.ExecutionResult, error) {
 	if e.Sandbox == nil {
 		return domain.ExecutionResult{}, fmt.Errorf("sandbox required")

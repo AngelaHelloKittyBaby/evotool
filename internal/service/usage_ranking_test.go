@@ -10,9 +10,9 @@ import (
 	"github.com/AngelaHelloKittyBaby/evotool/internal/domain"
 )
 
-// TestExecutionOutcomeDrivesRetrievalRanking closes the loop AGENTS.md requires:
-// a tool that succeeds repeatedly must outrank a semantically identical tool
-// that keeps failing, purely because of recorded execution experience.
+// TestExecutionOutcomeDrivesRetrievalRanking 闭合 AGENTS.md 要求的那条回路：
+// 一个反复成功的工具，必须仅凭已记录的执行经验，排在一个语义完全相同
+// 但反复失败的工具之前。
 func TestExecutionOutcomeDrivesRetrievalRanking(t *testing.T) {
 	root := t.TempDir()
 	stores := filesystem.NewStores(root)
@@ -79,9 +79,9 @@ func TestExecutionOutcomeDrivesRetrievalRanking(t *testing.T) {
 	}
 }
 
-// TestDefaultRetrievalHidesArchivedAndQuarantined pins the AGENTS.md rule that
-// archived and quarantined capabilities leave the default retrieval set even
-// when they match the query better than any active Tool.
+// TestDefaultRetrievalHidesArchivedAndQuarantined 钉住 AGENTS.md 的规则：
+// 即使 archived 和 quarantined 能力的匹配度高于任何活跃 Tool，
+// 它们也必须退出默认检索集合。
 func TestDefaultRetrievalHidesArchivedAndQuarantined(t *testing.T) {
 	root := t.TempDir()
 	registry := filesystem.NewRegistryStore(root)

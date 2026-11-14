@@ -7,18 +7,18 @@ import (
 	"github.com/AngelaHelloKittyBaby/evotool/internal/domain"
 )
 
-// PolicyServiceConfig defines the maximum resources permitted by the host.
+// PolicyServiceConfig 定义宿主允许的资源上限。
 type PolicyServiceConfig struct {
 	ResourceLimits domain.ResourceLimits
 }
 
-// PolicyService checks execution eligibility without running generated code.
-// Its decisions do not replace enforcement by a sandbox.
+// PolicyService 在不运行生成代码的前提下判断是否能执行。
+// 它的结论不能替代沙箱的实际隔离。
 type PolicyService struct {
 	limits domain.ResourceLimits
 }
 
-// NewPolicyService creates a fail-closed policy engine with explicit host limits.
+// NewPolicyService 创建一套 fail-closed 的策略引擎，宿主上限必须显式给出。
 func NewPolicyService(config PolicyServiceConfig) (*PolicyService, error) {
 	l := config.ResourceLimits
 	if l.MaxRuntimeMs <= 0 || l.MaxMemoryBytes <= 0 || l.MaxOutputBytes <= 0 {
@@ -27,9 +27,8 @@ func NewPolicyService(config PolicyServiceConfig) (*PolicyService, error) {
 	return &PolicyService{limits: l}, nil
 }
 
-// Evaluate implements ports.PolicyEngine. Privileged declarations require review
-// even when the Tool already has a reviewed trust label: the model does not yet
-// carry a review bound to a particular version and permission set.
+// Evaluate 实现 ports.PolicyEngine。即使 Tool 已经带有 reviewed 信任标签，
+// 特权声明仍然要求审查：当前模型还没有把审查结论绑定到具体版本和权限集合上。
 func (s *PolicyService) Evaluate(ctx context.Context, tool domain.Tool, _ domain.TaskSpec) (domain.PolicyDecision, error) {
 	if err := checkContext(ctx); err != nil {
 		return domain.PolicyDecision{}, err

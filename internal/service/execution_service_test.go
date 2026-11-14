@@ -113,7 +113,7 @@ func TestExecutionServicePaths(t *testing.T) {
 			if didExecute != tt.execute || (len(f.results) > 0) != tt.record {
 				t.Fatalf("unexpected calls: %v", f.calls)
 			}
-			// Usage statistics only move when the executor actually ran.
+			// 只有执行器真的运行过，使用统计才会变化。
 			if (len(f.usages) > 0) != tt.execute {
 				t.Fatalf("usage recorded without execution: %v", f.calls)
 			}

@@ -10,7 +10,7 @@ import (
 	"github.com/AngelaHelloKittyBaby/evotool/internal/ports"
 )
 
-// CapabilityMemoryServiceConfig contains dependencies for the capability memory facade.
+// CapabilityMemoryServiceConfig 包含能力记忆门面所需的依赖。
 type CapabilityMemoryServiceConfig struct {
 	ToolStore         ports.ToolStore
 	LibraryStore      ports.LibraryStore
@@ -23,7 +23,7 @@ type CapabilityMemoryServiceConfig struct {
 	BenchmarkService  *BenchmarkService
 }
 
-// CapabilityMemoryService provides the main application operations for EvoTool memory.
+// CapabilityMemoryService 提供 EvoTool 能力记忆的主要应用操作。
 type CapabilityMemoryService struct {
 	tools            ports.ToolStore
 	libraries        ports.LibraryStore
@@ -37,7 +37,7 @@ type CapabilityMemoryService struct {
 	benchmark        *BenchmarkService
 }
 
-// NewCapabilityMemoryService creates the capability memory facade.
+// NewCapabilityMemoryService 创建能力记忆门面。
 func NewCapabilityMemoryService(config CapabilityMemoryServiceConfig) (*CapabilityMemoryService, error) {
 	if config.ToolStore == nil {
 		return nil, fmt.Errorf("%w: tool store", ErrMissingDependency)
@@ -71,7 +71,7 @@ func NewCapabilityMemoryService(config CapabilityMemoryServiceConfig) (*Capabili
 	}, nil
 }
 
-// RunBenchmark compares generation cost with and without capability memory.
+// RunBenchmark 对比有能力和没有能力记忆时的生成成本。
 func (s *CapabilityMemoryService) RunBenchmark(ctx context.Context, suite domain.BenchmarkSuite) (domain.BenchmarkReport, error) {
 	if s.benchmark == nil {
 		return domain.BenchmarkReport{}, fmt.Errorf("%w: benchmark service", ErrMissingDependency)
@@ -79,7 +79,7 @@ func (s *CapabilityMemoryService) RunBenchmark(ctx context.Context, suite domain
 	return s.benchmark.Run(ctx, suite)
 }
 
-// ExecuteTool delegates checked execution to the configured execution service.
+// ExecuteTool 把带检查的执行委托给已配置的执行服务。
 func (s *CapabilityMemoryService) ExecuteTool(ctx context.Context, id string, task domain.TaskSpec, input map[string]any) (domain.ExecutionResult, error) {
 	if s.execution == nil {
 		return domain.ExecutionResult{}, fmt.Errorf("%w: execution service", ErrMissingDependency)
@@ -87,7 +87,7 @@ func (s *CapabilityMemoryService) ExecuteTool(ctx context.Context, id string, ta
 	return s.execution.ExecuteTool(ctx, id, task, input)
 }
 
-// SearchTools searches reusable tools for a task.
+// SearchTools 针对一个任务检索可复用的 Tool。
 func (s *CapabilityMemoryService) SearchTools(ctx context.Context, task domain.TaskSpec) (domain.RetrievalResult, error) {
 	if s.retrieval == nil {
 		return domain.RetrievalResult{}, fmt.Errorf("%w: retrieval service", ErrMissingDependency)
@@ -95,7 +95,7 @@ func (s *CapabilityMemoryService) SearchTools(ctx context.Context, task domain.T
 	return s.retrieval.Search(ctx, task)
 }
 
-// SearchLibraries searches reusable libraries for a generated tool dependency query.
+// SearchLibraries 按生成工具的依赖需求检索可复用的 Library。
 func (s *CapabilityMemoryService) SearchLibraries(ctx context.Context, query domain.RetrievalQuery) ([]domain.LibraryCandidate, error) {
 	if s.libraryRetriever == nil {
 		return nil, fmt.Errorf("%w: library retriever", ErrMissingDependency)
@@ -107,7 +107,7 @@ func (s *CapabilityMemoryService) SearchLibraries(ctx context.Context, query dom
 	return candidates, nil
 }
 
-// LinkToolLibraries records reusable libraries as dependencies of a tool.
+// LinkToolLibraries 把可复用的 Library 记录为某个 Tool 的依赖。
 func (s *CapabilityMemoryService) LinkToolLibraries(ctx context.Context, tool domain.Tool, libraries []domain.Library) (domain.DependencyGraph, error) {
 	toolID := capabilityID(tool.ID, tool.Name)
 	if toolID == "" {
@@ -192,7 +192,7 @@ func (s *CapabilityMemoryService) LinkToolLibraries(ctx context.Context, tool do
 	return graph, nil
 }
 
-// GetDependencyGraph returns a stored dependency graph by its root capability ID.
+// GetDependencyGraph 按根能力 ID 返回已保存的依赖图。
 func (s *CapabilityMemoryService) GetDependencyGraph(ctx context.Context, rootID string) (domain.DependencyGraph, error) {
 	graph, err := s.registry.GetDependencyGraph(ctx, rootID)
 	if err != nil {
@@ -201,7 +201,7 @@ func (s *CapabilityMemoryService) GetDependencyGraph(ctx context.Context, rootID
 	return graph, nil
 }
 
-// CheckToolDependencies checks whether a Tool dependency graph is executable.
+// CheckToolDependencies 检查某个 Tool 的依赖图是否可执行。
 func (s *CapabilityMemoryService) CheckToolDependencies(ctx context.Context, toolID string) (domain.DependencyCheckResult, error) {
 	result, err := s.dependency.CheckTool(ctx, toolID)
 	if err != nil {
@@ -210,7 +210,7 @@ func (s *CapabilityMemoryService) CheckToolDependencies(ctx context.Context, too
 	return result, nil
 }
 
-// SaveTool saves a tool and synchronizes its registry metadata.
+// SaveTool 保存 Tool 并同步其 Registry 元数据。
 func (s *CapabilityMemoryService) SaveTool(ctx context.Context, tool domain.Tool) error {
 	if err := s.tools.Save(ctx, tool); err != nil {
 		return fmt.Errorf("save tool: %w", err)
@@ -221,7 +221,7 @@ func (s *CapabilityMemoryService) SaveTool(ctx context.Context, tool domain.Tool
 	return s.logAudit(ctx, "tool.saved", domain.AuditSubjectTool, tool.ID, tool.Name)
 }
 
-// GetTool returns a stored tool by ID.
+// GetTool 按 ID 返回已保存的 Tool。
 func (s *CapabilityMemoryService) GetTool(ctx context.Context, id string) (domain.Tool, error) {
 	tool, err := s.tools.Get(ctx, id)
 	if err != nil {
@@ -230,7 +230,7 @@ func (s *CapabilityMemoryService) GetTool(ctx context.Context, id string) (domai
 	return tool, nil
 }
 
-// SaveLibrary saves a library and synchronizes its registry metadata.
+// SaveLibrary 保存 Library 并同步其 Registry 元数据。
 func (s *CapabilityMemoryService) SaveLibrary(ctx context.Context, library domain.Library) error {
 	if err := s.libraries.Save(ctx, library); err != nil {
 		return fmt.Errorf("save library: %w", err)
@@ -241,7 +241,7 @@ func (s *CapabilityMemoryService) SaveLibrary(ctx context.Context, library domai
 	return s.logAudit(ctx, "library.saved", domain.AuditSubjectLibrary, library.ID, library.Name)
 }
 
-// GetLibrary returns a stored library by ID.
+// GetLibrary 按 ID 返回已保存的 Library。
 func (s *CapabilityMemoryService) GetLibrary(ctx context.Context, id string) (domain.Library, error) {
 	library, err := s.libraries.Get(ctx, id)
 	if err != nil {
@@ -250,7 +250,7 @@ func (s *CapabilityMemoryService) GetLibrary(ctx context.Context, id string) (do
 	return library, nil
 }
 
-// RecordExecution records a tool execution result.
+// RecordExecution 记录一次工具执行结果。
 func (s *CapabilityMemoryService) RecordExecution(ctx context.Context, result domain.ExecutionResult) error {
 	if s.recorder == nil {
 		return fmt.Errorf("%w: execution recorder", ErrMissingDependency)

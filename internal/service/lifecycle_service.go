@@ -10,21 +10,21 @@ import (
 	"github.com/AngelaHelloKittyBaby/evotool/internal/ports"
 )
 
-// LifecycleServiceConfig contains dependencies and policy for lifecycle scans.
+// LifecycleServiceConfig 包含生命周期扫描所需的依赖和策略。
 type LifecycleServiceConfig struct {
 	ToolStore ports.ToolStore
 	Policy    domain.LifecyclePolicy
 	Now       func() time.Time
 }
 
-// LifecycleService evaluates Tool retention candidates without mutating storage.
+// LifecycleService 评估 Tool 的保留候选，但不修改存储。
 type LifecycleService struct {
 	tools  ports.ToolStore
 	policy domain.LifecyclePolicy
 	now    func() time.Time
 }
 
-// NewLifecycleService creates a lifecycle scan service.
+// NewLifecycleService 创建生命周期扫描服务。
 func NewLifecycleService(config LifecycleServiceConfig) (*LifecycleService, error) {
 	if config.ToolStore == nil {
 		return nil, fmt.Errorf("%w: tool store", ErrMissingDependency)
@@ -47,7 +47,7 @@ func NewLifecycleService(config LifecycleServiceConfig) (*LifecycleService, erro
 	}, nil
 }
 
-// Scan returns lifecycle candidates without changing Tool metadata or files.
+// Scan 返回生命周期候选，但不改动 Tool 元数据或文件。
 func (s *LifecycleService) Scan(ctx context.Context) (domain.LifecycleScanReport, error) {
 	tools, err := s.tools.List(ctx)
 	if err != nil {

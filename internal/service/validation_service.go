@@ -13,10 +13,10 @@ import (
 	"github.com/AngelaHelloKittyBaby/evotool/internal/ports"
 )
 
-// ValidationService checks a submitted package before running its tests in a sandbox.
+// ValidationService 在沙箱运行测试之前检查提交上来的包。
 type ValidationService struct{ Sandbox ports.Sandbox }
 
-// ValidateGeneratedTool validates the MVP Python contract; dependency installation is unsupported.
+// ValidateGeneratedTool 校验 MVP 的 Python 契约；暂不支持安装依赖。
 func (s ValidationService) ValidateGeneratedTool(ctx context.Context, g domain.GeneratedTool) (domain.ValidationResult, error) {
 	r := domain.ValidationResult{}
 	if err := checkContext(ctx); err != nil {

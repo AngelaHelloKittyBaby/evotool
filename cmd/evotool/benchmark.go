@@ -9,7 +9,7 @@ import (
 	"github.com/AngelaHelloKittyBaby/evotool/internal/domain"
 )
 
-// runBenchmarkSuite loads a suite, runs both modes, and prints the comparison.
+// runBenchmarkSuite 读取一套任务，跑完两种模式并打印对比结果。
 func runBenchmarkSuite(root, suitePath, outPath string) error {
 	var suite domain.BenchmarkSuite
 	if err := readWorkflowJSON(suitePath, &suite); err != nil {

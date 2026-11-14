@@ -9,19 +9,19 @@ import (
 	"github.com/AngelaHelloKittyBaby/evotool/internal/ports"
 )
 
-// DependencyServiceConfig contains dependencies for dependency graph health checks.
+// DependencyServiceConfig 包含依赖图健康检查所需的依赖。
 type DependencyServiceConfig struct {
 	RegistryStore ports.RegistryStore
 	LibraryStore  ports.LibraryStore
 }
 
-// DependencyService checks dependency graphs before a Tool is executed.
+// DependencyService 在 Tool 执行前检查依赖图。
 type DependencyService struct {
 	registry  ports.RegistryStore
 	libraries ports.LibraryStore
 }
 
-// NewDependencyService creates a dependency health checker.
+// NewDependencyService 创建依赖健康检查器。
 func NewDependencyService(config DependencyServiceConfig) (*DependencyService, error) {
 	if config.RegistryStore == nil {
 		return nil, fmt.Errorf("%w: registry store", ErrMissingDependency)
@@ -32,7 +32,7 @@ func NewDependencyService(config DependencyServiceConfig) (*DependencyService, e
 	return &DependencyService{registry: config.RegistryStore, libraries: config.LibraryStore}, nil
 }
 
-// CheckTool loads and checks the dependency graph for a Tool root ID.
+// CheckTool 按根 ID 读取并检查某个 Tool 的依赖图。
 func (s *DependencyService) CheckTool(ctx context.Context, toolID string) (domain.DependencyCheckResult, error) {
 	if strings.TrimSpace(toolID) == "" {
 		return domain.DependencyCheckResult{}, fmt.Errorf("tool id is required")
@@ -44,7 +44,7 @@ func (s *DependencyService) CheckTool(ctx context.Context, toolID string) (domai
 	return s.CheckGraph(ctx, graph)
 }
 
-// CheckGraph verifies that required Library dependencies are available and version-compatible.
+// CheckGraph 校验必需的 Library 依赖是否存在且版本兼容。
 func (s *DependencyService) CheckGraph(ctx context.Context, graph domain.DependencyGraph) (domain.DependencyCheckResult, error) {
 	issues := make([]domain.DependencyIssue, 0)
 	constraints := versionConstraintMap(graph.VersionConstraints)
@@ -96,7 +96,7 @@ func (s *DependencyService) CheckGraph(ctx context.Context, graph domain.Depende
 	}, nil
 }
 
-// ResolveTool implements ports.DependencyResolver for Tool dependency graphs.
+// ResolveTool 为 Tool 依赖图实现 ports.DependencyResolver。
 func (s *DependencyService) ResolveTool(ctx context.Context, tool domain.Tool) (domain.DependencyGraph, error) {
 	result, err := s.CheckTool(ctx, capabilityID(tool.ID, tool.Name))
 	if err != nil {
@@ -105,7 +105,7 @@ func (s *DependencyService) ResolveTool(ctx context.Context, tool domain.Tool) (
 	return result.Graph, nil
 }
 
-// ResolveLibrary implements ports.DependencyResolver for Library dependency graphs.
+// ResolveLibrary 为 Library 依赖图实现 ports.DependencyResolver。
 func (s *DependencyService) ResolveLibrary(_ context.Context, library domain.Library) (domain.DependencyGraph, error) {
 	libraryID := capabilityID(library.ID, library.Name)
 	if libraryID == "" {

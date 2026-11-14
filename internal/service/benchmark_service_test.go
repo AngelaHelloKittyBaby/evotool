@@ -46,14 +46,14 @@ func TestBenchmarkWithStoredToolSubstitutesGeneration(t *testing.T) {
 	if report.GenerationSaved() != 3 {
 		t.Fatalf("generation saved = %d, want 3", report.GenerationSaved())
 	}
-	// Three tasks cost 1200 tokens each in baseline; a full reuse run spends none.
+	// baseline 下三个任务各花 1200 token；全部复用的那一轮一个都不花。
 	if report.Baseline.TotalTokenUsage.TotalTokens != 3600 {
 		t.Fatalf("baseline tokens = %d, want 3600", report.Baseline.TotalTokenUsage.TotalTokens)
 	}
 	if report.TokenSaved().TotalTokens != 3600 {
 		t.Fatalf("tokens saved = %d, want 3600", report.TokenSaved().TotalTokens)
 	}
-	// Baseline generates the same package three times, so two are duplicates.
+	// baseline 把同一个包生成了三次，因此其中两次算重复。
 	if report.Baseline.DuplicateGenerationCount != 2 {
 		t.Fatalf("baseline duplicate generations = %d, want 2", report.Baseline.DuplicateGenerationCount)
 	}
@@ -64,7 +64,7 @@ func TestBenchmarkWithStoredToolSubstitutesGeneration(t *testing.T) {
 
 func TestBenchmarkDoesNotReuseUnhealthyDependencies(t *testing.T) {
 	fixture := newBenchmarkFixture(t, true)
-	// The stored Tool references a Library that does not exist.
+	// 已保存的 Tool 引用了一个不存在的 Library。
 	graph := domain.DependencyGraph{
 		Nodes: []domain.DependencyNode{
 			{ID: "csv_numeric_summary", Name: "csv_numeric_summary", Kind: domain.DependencyTool, Version: "v1"},
@@ -113,7 +113,7 @@ func TestBenchmarkCountsReusableLibraries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run benchmark: %v", err)
 	}
-	// One of the two declared Libraries resolves, for each of the three tasks.
+	// 声明的两个 Library 中有一个能解析成功，三个任务各算一次。
 	if report.Baseline.LibraryReusedCount != 3 {
 		t.Fatalf("library reused = %d, want 3", report.Baseline.LibraryReusedCount)
 	}
@@ -180,8 +180,8 @@ type benchmarkFixture struct {
 	libraries *filesystem.LibraryStore
 }
 
-// newBenchmarkFixture builds the benchmark over a real filesystem capability
-// memory so retrieval, dependency checks and policy all use production code.
+// newBenchmarkFixture 基于真实的文件系统能力记忆构建基准，
+// 使检索、依赖检查和策略都走生产代码。
 func newBenchmarkFixture(t *testing.T, seedStoredTool bool) benchmarkFixture {
 	t.Helper()
 	root := t.TempDir()
@@ -271,8 +271,8 @@ func benchmarkFixtureTool() domain.Tool {
 	}
 }
 
-// benchmarkTestSuite mirrors examples/benchmark/csv-reporting-suite.json: three
-// tasks that all need the same numeric CSV summary.
+// benchmarkTestSuite 对应 examples/benchmark/csv-reporting-suite.json：
+// 三个都需要同一份数值 CSV 统计的任务。
 func benchmarkTestSuite() domain.BenchmarkSuite {
 	base := domain.GeneratedTool{
 		Manifest: domain.ToolManifest{

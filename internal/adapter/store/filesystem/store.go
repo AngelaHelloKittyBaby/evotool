@@ -145,7 +145,7 @@ func (s *ToolStore) Get(ctx context.Context, id string) (domain.Tool, error) {
 }
 
 // Update 更新 Tool，本地文件系统实现与 Save 相同。
-// List returns all Tool metadata stored in the local capability memory.
+// List 返回本地能力记忆中保存的全部 Tool 元数据。
 func (s *ToolStore) List(ctx context.Context) ([]domain.Tool, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err
@@ -307,11 +307,10 @@ func (l *AuditLogger) Log(ctx context.Context, event domain.AuditEvent) error {
 	return appendJSONLine(filepath.Join(l.root, "registry", "audit", "events.jsonl"), event)
 }
 
-// RecordUsage folds one execution into the stored Tool usage statistics.
-// Filesystem storage has no cross-file transaction: the Tool metadata and the
-// registry metadata copy are written separately, so a crash between them leaves
-// the two views temporarily inconsistent. Both are rewritten from the same
-// aggregate, so a later execution repairs the divergence.
+// RecordUsage 把一次执行折叠进已保存的 Tool 使用统计。
+// 文件系统存储没有跨文件事务：Tool 元数据和 Registry 元数据副本是分开写的，
+// 因此两者之间发生崩溃会让两个视图短暂不一致。由于二者都由同一份聚合结果
+// 重写，后续任意一次执行都会修复这处偏差。
 func (u *UsageRecorder) RecordUsage(ctx context.Context, result domain.ExecutionResult) error {
 	if err := checkContext(ctx); err != nil {
 		return err

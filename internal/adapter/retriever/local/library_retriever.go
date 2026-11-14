@@ -15,12 +15,12 @@ import (
 
 const defaultLibraryLimit = 10
 
-// LibraryRetriever searches reusable libraries from the local registry.
+// LibraryRetriever 从本地 Registry 检索可复用的 Library。
 type LibraryRetriever struct {
 	root string
 }
 
-// NewLibraryRetriever creates a local library retriever rooted at root.
+// NewLibraryRetriever 创建以 root 为根的本地 Library 检索器。
 func NewLibraryRetriever(root string) *LibraryRetriever {
 	root = strings.TrimSpace(root)
 	if root == "" {
@@ -29,7 +29,7 @@ func NewLibraryRetriever(root string) *LibraryRetriever {
 	return &LibraryRetriever{root: root}
 }
 
-// SearchLibraries returns libraries that match the query and are compatible with it.
+// SearchLibraries 返回与查询匹配且相互兼容的 Library。
 func (r *LibraryRetriever) SearchLibraries(ctx context.Context, query domain.RetrievalQuery) ([]domain.LibraryCandidate, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err

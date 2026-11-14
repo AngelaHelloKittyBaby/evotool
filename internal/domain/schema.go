@@ -6,8 +6,8 @@ import (
 	"math"
 )
 
-// ValidateSchema checks the deliberately small MVP JSON schema subset.
-// Only object schemas with primitive properties and required names are supported.
+// ValidateSchema 检查 MVP 有意支持的极简 JSON schema 子集。
+// 只支持带基础类型属性和 required 名称的 object schema。
 func ValidateSchema(schema map[string]any) error {
 	if schema["type"] != "object" {
 		return fmt.Errorf("schema type must be object")
@@ -53,7 +53,7 @@ func ValidateSchema(schema map[string]any) error {
 	return nil
 }
 
-// ValidateObject enforces required properties and primitive types on JSON data.
+// ValidateObject 对 JSON 数据强制校验 required 属性和基础类型。
 func ValidateObject(schema map[string]any, value map[string]any) error {
 	if err := ValidateSchema(schema); err != nil {
 		return err

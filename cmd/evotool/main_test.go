@@ -11,9 +11,8 @@ import (
 	"github.com/AngelaHelloKittyBaby/evotool/internal/service"
 )
 
-// Tests seed capability memory through the store API instead of a demo CLI
-// command: fixtures that ship in the binary would be indistinguishable from
-// real learned capabilities once saved.
+// 测试通过 store API 播种能力记忆，而不是用 demo CLI 命令：
+// 随二进制一起发布的夹具一旦落盘，就与真正学到的能力无法区分。
 
 func TestRunSearchTools(t *testing.T) {
 	root := t.TempDir()

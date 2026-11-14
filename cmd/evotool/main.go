@@ -350,9 +350,8 @@ func newCapabilityMemory(root string) (*service.CapabilityMemoryService, error) 
 	return memory, nil
 }
 
-// newBenchmarkService assembles the benchmark path from the same retrieval and
-// policy implementations the CLI uses, so a reported saving reflects the real
-// search pipeline rather than a benchmark-only shortcut.
+// newBenchmarkService 用 CLI 正在使用的同一套检索和策略实现装配基准路径，
+// 这样报告出来的收益反映的是真实检索流水线，而不是基准专用的捷径。
 func newBenchmarkService(root string) (*service.BenchmarkService, error) {
 	memory, err := newCapabilityMemory(root)
 	if err != nil {

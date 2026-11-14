@@ -11,12 +11,12 @@ import (
 	"github.com/AngelaHelloKittyBaby/evotool/internal/ports"
 )
 
-// ErrExecutionDenied identifies an execution blocked before the executor runs.
+// ErrExecutionDenied 标识一次在执行器运行前就被拦下的执行。
 var ErrExecutionDenied = errors.New("execution denied")
 
-// ExecutionServiceConfig supplies the required execution boundaries.
-// UsageRecorder is optional: omitting it keeps execution history only and
-// leaves ranker statistics frozen at their defaults.
+// ExecutionServiceConfig 提供执行所需的各项边界。
+// UsageRecorder 是可选的：省略它只保留执行历史，
+// 排序所用的统计则停留在默认值上。
 type ExecutionServiceConfig struct {
 	ToolStore    ports.ToolStore
 	Dependencies ports.DependencyResolver
@@ -27,10 +27,10 @@ type ExecutionServiceConfig struct {
 	Usage        ports.UsageRecorder
 }
 
-// ExecutionService orchestrates checked execution and durable result reporting.
+// ExecutionService 编排带检查的执行过程和可持久化的结果上报。
 type ExecutionService struct{ config ExecutionServiceConfig }
 
-// NewExecutionService requires every safety and reporting dependency explicitly.
+// NewExecutionService 要求显式提供每一项安全与上报依赖。
 func NewExecutionService(c ExecutionServiceConfig) (*ExecutionService, error) {
 	for _, d := range []struct {
 		name    string
@@ -47,10 +47,9 @@ func NewExecutionService(c ExecutionServiceConfig) (*ExecutionService, error) {
 	return &ExecutionService{config: c}, nil
 }
 
-// ExecuteTool loads the stored version, checks dependencies and policy, and
-// records both blocked attempts and executor failures. Only outcomes from an
-// executor that actually ran update usage statistics. Callers receive the result
-// even when execution or subsequent persistence fails.
+// ExecuteTool 读取已保存的版本，检查依赖和策略，并记录被拦截的尝试
+// 与执行器的失败。只有真正运行过执行器得到的结果才会更新使用统计。
+// 即使执行或后续持久化失败，调用方仍会拿到结果。
 func (s *ExecutionService) ExecuteTool(ctx context.Context, id string, task domain.TaskSpec, input map[string]any) (domain.ExecutionResult, error) {
 	if err := checkContext(ctx); err != nil {
 		return domain.ExecutionResult{}, err
@@ -101,9 +100,9 @@ func (s *ExecutionService) ExecuteTool(ctx context.Context, id string, task doma
 		return fail(fmt.Errorf("audit execution start: %w", err))
 	}
 	executed, execErr := s.config.Executor.Execute(ctx, tool, input)
-	// Identity and timestamps belong to this invocation, not adapter output.
+	// 标识和时间戳属于本次调用，而不是适配器的输出。
 	executed.ToolID, executed.Version, executed.StartedAt = result.ToolID, result.Version, result.StartedAt
-	// From here on the executor ran, so the outcome is usage experience.
+	// 从这里开始执行器已经运行过，因此这个结果属于使用经验。
 	if execErr != nil {
 		executed.Success = false
 		executed.Error = strings.TrimSpace(strings.Join([]string{executed.Error, execErr.Error()}, " "))
@@ -117,13 +116,13 @@ func (s *ExecutionService) ExecuteTool(ctx context.Context, id string, task doma
 	return s.finish(ctx, executed, true, execErr)
 }
 
-// finish persists the invocation. executed reports whether the executor actually
-// ran: policy blocks and dependency failures only write history and audit, while
-// executor outcomes also update the usage statistics the ranker scores on.
+// finish 持久化本次调用。executed 表示执行器是否真的运行过：
+// 策略拦截和依赖失败只写历史与审计，而执行器给出的结果
+// 还会更新排序所依据的使用统计。
 func (s *ExecutionService) finish(ctx context.Context, result domain.ExecutionResult, executed bool, cause error) (domain.ExecutionResult, error) {
 	result.FinishedAt = time.Now().UTC()
 	result.Duration = result.FinishedAt.Sub(result.StartedAt)
-	// Cancellation must not discard the failure record; persistence is bounded.
+	// 取消上下文不能丢掉失败记录；这里的持久化有超时上限。
 	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if err := s.config.Recorder.RecordExecution(recordCtx, result); err != nil {

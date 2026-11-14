@@ -11,9 +11,9 @@ import (
 	"github.com/AngelaHelloKittyBaby/evotool/internal/domain"
 )
 
-// BenchmarkServiceConfig defines the capabilities a benchmark run needs.
-// Every dependency is required: a benchmark that silently skips retrieval or
-// policy evaluation would report savings it never measured.
+// BenchmarkServiceConfig 定义一次基准运行所需的能力。
+// 每项依赖都是必需的：如果基准悄悄跳过检索或策略评估，
+// 它就会报告一个自己从未测量过的收益。
 type BenchmarkServiceConfig struct {
 	Retrieval *RetrievalService
 	Memory    *CapabilityMemoryService
@@ -21,7 +21,7 @@ type BenchmarkServiceConfig struct {
 	Now       func() time.Time
 }
 
-// BenchmarkService compares tool generation cost with and without capability memory.
+// BenchmarkService 对比有能力和没有能力记忆时的工具生成成本。
 type BenchmarkService struct {
 	retrieval *RetrievalService
 	memory    *CapabilityMemoryService
@@ -29,7 +29,7 @@ type BenchmarkService struct {
 	now       func() time.Time
 }
 
-// NewBenchmarkService validates the benchmark dependencies.
+// NewBenchmarkService 校验基准所需的依赖。
 func NewBenchmarkService(config BenchmarkServiceConfig) (*BenchmarkService, error) {
 	if config.Retrieval == nil {
 		return nil, fmt.Errorf("%w: retrieval service", ErrMissingDependency)
@@ -47,11 +47,11 @@ func NewBenchmarkService(config BenchmarkServiceConfig) (*BenchmarkService, erro
 	return &BenchmarkService{retrieval: config.Retrieval, memory: config.Memory, policy: config.Policy, now: now}, nil
 }
 
-// Run executes every task under both modes and returns the comparison.
-// The modes share one task list and one stored capability memory, so the only
-// difference is whether an existing capability is searched for before generating.
-// Capabilities learned during the run are not reused by later tasks in the same
-// run: that would measure in-run learning, which this benchmark does not claim.
+// Run 让每个任务在两种模式下各跑一遍，返回对比结果。
+// 两种模式共用同一份任务列表和同一份已保存的能力记忆，唯一差别是
+// 生成之前是否先检索已有能力。
+// 本轮运行中新学到的能力不会被同一轮后续任务复用：那度量的是
+// 运行内学习，不在本基准的主张范围内。
 func (s *BenchmarkService) Run(ctx context.Context, suite domain.BenchmarkSuite) (domain.BenchmarkReport, error) {
 	if err := checkContext(ctx); err != nil {
 		return domain.BenchmarkReport{}, err
@@ -82,8 +82,8 @@ func (s *BenchmarkService) Run(ctx context.Context, suite domain.BenchmarkSuite)
 	return domain.BenchmarkReport{SuiteName: suite.Name, Baseline: baseline, EvoTool: evotool}, nil
 }
 
-// runMode replays the suite in one mode. Baseline always generates; EvoTool
-// consults capability memory first and generates only when nothing reusable exists.
+// runMode 以单一模式重放整套任务。
+// baseline 每次都生成；evotool 先查能力记忆，没有可复用的才生成。
 func (s *BenchmarkService) runMode(ctx context.Context, suite domain.BenchmarkSuite, mode domain.BenchmarkMode) (domain.BenchmarkResult, error) {
 	result := domain.BenchmarkResult{Mode: mode, SuiteName: suite.Name, TotalTasks: len(suite.Tasks)}
 	generated := map[string]struct{}{}
@@ -121,8 +121,8 @@ func (s *BenchmarkService) runMode(ctx context.Context, suite domain.BenchmarkSu
 			result.TotalTokenUsage.TotalTokens += task.TokenUsage.TotalTokens
 		}
 
-		// Library reuse and policy risk are properties of the package the Agent
-		// would submit, so they are measurable in both modes.
+		// Library 复用情况和策略风险都属于 Agent 会提交的那个包本身的属性，
+		// 因此在两种模式下都可以度量。
 		if reusedLibraries, err := s.countReusableLibraries(ctx, task.Package); err != nil {
 			return domain.BenchmarkResult{}, err
 		} else {
@@ -145,9 +145,8 @@ func (s *BenchmarkService) runMode(ctx context.Context, suite domain.BenchmarkSu
 			TotalTokens:      result.TotalTokenUsage.TotalTokens / result.TotalTasks,
 		}
 	}
-	// SuccessRate and FailureRate stay zero: this benchmark replays reuse
-	// decisions, it does not execute the generated tools. Reporting 1.0 would
-	// be an assertion nobody measured.
+	// SuccessRate 和 FailureRate 保持为 0：本基准重放的是复用决策，
+	// 它并不执行生成的工具。填 1.0 就是一个没人测量过的断言。
 	return result, nil
 }
 
@@ -156,9 +155,9 @@ type reuseOutcome struct {
 	healthy bool
 }
 
-// assessReuse searches capability memory and verifies the match is actually
-// runnable. A dependency check is part of the test: a matching Tool whose
-// Libraries are missing is not reusable, so the caller must generate instead.
+// assessReuse 检索能力记忆，并确认命中的工具确实可运行。
+// 依赖检查是判断的一部分：命中了但 Library 缺失的 Tool 不可复用，
+// 调用方必须改为生成。
 func (s *BenchmarkService) assessReuse(ctx context.Context, task domain.BenchmarkTask) (reuseOutcome, error) {
 	found, err := s.retrieval.Search(ctx, task.Spec)
 	if err != nil {
@@ -173,8 +172,8 @@ func (s *BenchmarkService) assessReuse(ctx context.Context, task domain.Benchmar
 	}
 	check, err := s.memory.CheckToolDependencies(ctx, toolID)
 	if err != nil {
-		// No stored graph means the Tool was never registered as reusable;
-		// treating that as healthy would claim a reuse execution would refuse.
+		// 没有保存依赖图意味着这个 Tool 从未被登记为可复用；
+		// 把它当作健康，就等于声称一次执行时会拒绝的复用是成功的。
 		if errors.Is(err, fs.ErrNotExist) {
 			return reuseOutcome{matched: true}, nil
 		}
@@ -183,8 +182,8 @@ func (s *BenchmarkService) assessReuse(ctx context.Context, task domain.Benchmar
 	return reuseOutcome{matched: true, healthy: check.Healthy}, nil
 }
 
-// countReusableLibraries reports how many declared Library references already
-// resolve against stored capability memory.
+// countReusableLibraries 统计声明的 Library 引用中有多少个
+// 已经在已保存的能力记忆里解析得到。
 func (s *BenchmarkService) countReusableLibraries(ctx context.Context, pkg domain.GeneratedTool) (int, error) {
 	refs := append(append([]domain.DependencyRef{}, pkg.Manifest.LibraryRefs...), pkg.Dependencies...)
 	count := 0
@@ -210,8 +209,8 @@ func (s *BenchmarkService) countReusableLibraries(ctx context.Context, pkg domai
 	return count, nil
 }
 
-// policyBlocked reports whether the submitted package would be stopped before
-// execution. It evaluates declared metadata only; no code runs here.
+// policyBlocked 判断待提交的包是否会在执行前被拦下。
+// 它只评估声明的元数据，不运行任何代码。
 func (s *BenchmarkService) policyBlocked(ctx context.Context, pkg domain.GeneratedTool) (bool, error) {
 	decision, err := s.policy.Evaluate(ctx, domain.Tool{
 		Manifest:        pkg.Manifest,
