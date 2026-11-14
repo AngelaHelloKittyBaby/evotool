@@ -163,7 +163,7 @@ go run ./cmd/evotool lifecycle scan --root .evotool --stale-days 30 --archive-da
 
 ```powershell
 go run ./cmd/evotool lifecycle archive --dry-run --root .evotool
-go run ./cmd/evotool lifecycle restore --id pdf_to_excel --root .evotool
+go run ./cmd/evotool lifecycle restore --id <tool-id> --root .evotool
 go run ./cmd/evotool lifecycle purge --dry-run --root .evotool
 ```
 

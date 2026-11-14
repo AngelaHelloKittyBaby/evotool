@@ -8,49 +8,46 @@ EvoTool helps AI agents turn one-off generated scripts into validated, searchabl
 
 ## Quick Start
 
-External agents can now submit Python tool packages for sandbox validation and reuse. See [the learning workflow and one-command acceptance test](docs/learning.md). This path requires a running Docker Linux engine and a prepared Python image; it does not embed an LLM.
+External agents submit Python tool packages for sandbox validation and reuse. See [the learning workflow and one-command acceptance test](docs/learning.md). This path requires a running Docker Linux engine and a prepared Python image; it does not embed an LLM.
 
-Save a demo generated tool into local capability memory:
+Learn a tool from a submitted package:
 
 ```bash
-go run ./cmd/evotool demo save-tool --root .evotool
+go run ./cmd/evotool learn --package examples/csv-analysis/generated.json --root .evotool
+go run ./cmd/evotool search tools --query "csv numeric summary" --root .evotool
+go run ./cmd/evotool execute --id csv_numeric_summary --input examples/csv-analysis/input.json --root .evotool
 ```
 
 This creates a local structure like:
 
 ```text
 .evotool/
-  tools/pdf_to_excel/
-  registry/metadata/tools/pdf_to_excel.json
+  tools/csv_numeric_summary/versions/v1/main.py
+  registry/metadata/tools/csv_numeric_summary.json
+  registry/execution_history/csv_numeric_summary.jsonl
   registry/audit/events.jsonl
-```
-
-Search the local capability memory:
-
-```bash
-go run ./cmd/evotool search tools --query "pdf table excel" --root .evotool
 ```
 
 The search command runs a local retrieval pipeline: keyword recall, metadata filtering, capability ranking, and final selection.
 
-Save the demo shared library and search it before generating another tool:
-
-```bash
-go run ./cmd/evotool demo save-library --root .evotool
-go run ./cmd/evotool search libraries --query "pdf parser table" --runtime python --root .evotool
-```
-
 Library retrieval is intentionally separate from Tool retrieval: a Tool is a top-level callable capability, while a Library is a reusable implementation dependency.
 
-Record and inspect the Tool -> Library dependency graph:
-
 ```bash
-go run ./cmd/evotool demo link-tool-library --root .evotool
-go run ./cmd/evotool deps graph --id pdf_to_excel --root .evotool
-go run ./cmd/evotool deps check --id pdf_to_excel --root .evotool
+go run ./cmd/evotool search libraries --query "csv statistics" --runtime python --root .evotool
 ```
 
-This records `pdf_to_excel -> pdf_parser` in `.evotool/registry/dependency_graph/pdf_to_excel.json`, updates the tool metadata with a `LibraryRefs` entry, and verifies that the referenced Library exists with a compatible version.
+Inspect the Tool -> Library dependency graph:
+
+```bash
+go run ./cmd/evotool deps graph --id csv_numeric_summary --root .evotool
+go run ./cmd/evotool deps check --id csv_numeric_summary --root .evotool
+```
+
+Measure reuse with the benchmark:
+
+```bash
+go run ./cmd/evotool benchmark run --suite examples/benchmark/csv-reporting-suite.json --root .evotool
+```
 
 Preview Tools that have been inactive for a long time:
 
@@ -64,7 +61,7 @@ The default policy marks Tools unused for 90 days as `stale` candidates and Tool
 
 EvoTool is in the early design and MVP stage.
 
-The execution policy service checks lifecycle, validation trust, version presence, and explicit host resource ceilings. `ExecutionService` coordinates dependency checks, policy checks, audit events, executor calls, and execution history. The external submission workflow now validates dependency-free Python tools and executes them through a Docker sandbox. Privileged submissions are rejected; model generation, executable shared-library dependencies, and a review approval interface are not implemented yet. See [the learning workflow](docs/learning.md) and [the security model](docs/security.md).
+The execution policy service checks lifecycle, validation trust, version presence, and explicit host resource ceilings. `ExecutionService` coordinates dependency checks, policy checks, audit events, executor calls, and execution history. The external submission workflow now validates dependency-free Python tools and executes them through a Docker sandbox. The benchmark runner replays a task suite in both baseline and EvoTool mode and reports what reuse actually saved. Privileged submissions are rejected; model generation, executable shared-library dependencies, and a review approval interface are not implemented yet. See [the learning workflow](docs/learning.md), [the benchmark](docs/benchmark.md), and [the security model](docs/security.md).
 
 ## Core Idea
 
@@ -252,12 +249,13 @@ Ranking should combine:
 This means EvoTool should know not only which tool is similar, but which tool is more reliable.
 
 Execution outcomes now feed back into that ranking. After an executor actually runs, `ExecutionService` folds the result into the stored `UsageStats` and both metadata copies, so repeated successes raise a tool's score and repeated failures lower it. Calls blocked by policy or dependency checks are recorded in history and audit but do not count as usage experience.
+
 ## What EvoTool Aims To Provide
 
 - Tool Memory for generated tools
 - Shared Library Memory for reusable implementation building blocks
 - Registry for metadata, embeddings, versions, dependency graph, policies, and execution history
-- Benchmarking to prove reduced token usage and task latency
+- Benchmarking to measure how much generation reuse replaces
 - Safety mechanisms, including sandboxing, permissions, review, execution limits, and dependency isolation
 - MCP integration for agent ecosystems
 - Eino adapter first, then OpenHands adapter
@@ -277,14 +275,32 @@ Generated tools are untrusted by default. EvoTool is designed around explicit sa
 
 A generated tool must not become an automatically reusable capability until it has passed validation and policy checks.
 
-## Benchmark Goal
+## Benchmark
 
-EvoTool should prove its value with reproducible benchmarks comparing:
+EvoTool proves its value with reproducible benchmarks comparing:
 
 ```text
 Baseline: Agent regenerates tools for recurring tasks.
 EvoTool: Agent searches learned tools and libraries first, then generates only when needed.
 ```
+
+```bash
+go run ./cmd/evotool benchmark run --suite examples/benchmark/csv-reporting-suite.json --root .evotool
+```
+
+On the bundled suite of three recurring CSV reporting tasks, once `csv_numeric_summary` is stored with healthy dependencies:
+
+```text
+metric                         baseline    evotool      delta
+tools generated                       3          0         -3
+tools reused                          0          3         +3
+duplicate generations                 2          0         -2
+total tokens                       3600          0      -3600
+```
+
+With an empty capability memory the same suite reports every delta as `+0`. That zero is the point: the runner does not hardcode a saving.
+
+EvoTool embeds no model, so the token counts are the generation cost each task declares in the suite. The runner measures how many generations reuse replaced, not model generation quality, and it does not execute the generated tools. The boundary is documented in [`docs/benchmark.md`](docs/benchmark.md).
 
 Key metrics:
 
@@ -292,31 +308,37 @@ Key metrics:
 - Duplicate generation count
 - Tool reuse count
 - Library reuse count
-- Average task latency
+- Average decision latency
 - Average token usage
-- Success and failure rates
+- Success and failure rates, once execution is wired into the harness
 - Safety policy blocks
 - Dependency-related failures
 
 ## Roadmap
 
-- Core domain models
-- Tool and Library manifests
-- Core ports and services
-- Filesystem ToolStore and LibraryStore
-- Semantic retrieval with metadata filtering and capability ranking
-- Registry and dependency graph
-- Validation and execution history
-- Safety policy model
-- Benchmark runner
+Implemented:
+
+- Core domain models, ports, and services
+- Tool and Library manifests with naming validation
+- Filesystem ToolStore, LibraryStore, and RegistryStore
+- Staged retrieval: keyword recall, metadata filtering, capability ranking
+- Execution outcomes fed back into ranking via `UsageRecorder`
+- Registry, dependency graph, and dependency health checks
+- Sandbox validation and execution history through a Docker sandbox
+- Safety policy model with fail-closed privileged permissions
+- Read-only lifecycle scan for stale and archive candidates
+- Benchmark runner comparing baseline and EvoTool reuse
+
+Not yet implemented:
+
+- Model generation: `ToolGenerator` has no implementation, so tools are submitted by an external agent
+- Executable shared-library dependencies: `LibraryRefs` are recorded and health-checked but rejected at validation
+- A review approval interface for high-risk tools
+- Lifecycle archive, restore, and purge commands
 - MCP server adapter
 - Eino adapter first, then OpenHands adapter
-- Semantic/vector retrieval
-- Dependency graph
-- Tool lifecycle retention and archive policy
-- Code similarity detection
-- Shared library extraction candidates
-- Tool versioning and lifecycle management
+- Semantic/vector retrieval, replacing the current keyword retriever
+- Code similarity detection and shared library extraction candidates
 - Failure analysis and automatic repair
 
 ## License

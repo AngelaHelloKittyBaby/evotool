@@ -2,33 +2,24 @@ package main
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
+	localretriever "github.com/AngelaHelloKittyBaby/evotool/internal/adapter/retriever/local"
 	"github.com/AngelaHelloKittyBaby/evotool/internal/adapter/store/filesystem"
+	"github.com/AngelaHelloKittyBaby/evotool/internal/domain"
+	"github.com/AngelaHelloKittyBaby/evotool/internal/service"
 )
 
-func TestRunDemoSaveTool(t *testing.T) {
-	root := t.TempDir()
-	if err := run([]string{"demo", "save-tool", "--root", root}); err != nil {
-		t.Fatalf("run demo save-tool: %v", err)
-	}
-
-	assertFile(t, filepath.Join(root, "tools", "pdf_to_excel", "manifest.json"))
-	assertFile(t, filepath.Join(root, "tools", "pdf_to_excel", "metadata.json"))
-	assertFile(t, filepath.Join(root, "tools", "pdf_to_excel", "versions", "v1", "main.py"))
-	assertFile(t, filepath.Join(root, "registry", "metadata", "tools", "pdf_to_excel.json"))
-	assertFile(t, filepath.Join(root, "registry", "audit", "events.jsonl"))
-}
+// Tests seed capability memory through the store API instead of a demo CLI
+// command: fixtures that ship in the binary would be indistinguishable from
+// real learned capabilities once saved.
 
 func TestRunSearchTools(t *testing.T) {
 	root := t.TempDir()
-	if err := run([]string{"demo", "save-tool", "--root", root}); err != nil {
-		t.Fatalf("run demo save-tool: %v", err)
-	}
-	if err := run([]string{"search", "tools", "--root", root, "--query", "pdf table excel", "--limit", "1"}); err != nil {
+	seedTool(t, root, cliTestTool("csv_numeric_summary", "data_analysis", "python", []string{"csv", "numeric", "summary"}))
+
+	if err := run([]string{"search", "tools", "--root", root, "--query", "csv numeric summary", "--limit", "1"}); err != nil {
 		t.Fatalf("run search tools: %v", err)
 	}
 }
@@ -39,23 +30,39 @@ func TestRunSearchToolsRequiresQuery(t *testing.T) {
 	}
 }
 
-func TestRunDemoSaveLibrary(t *testing.T) {
+func TestRunSearchToolsExcludesArchived(t *testing.T) {
 	root := t.TempDir()
-	if err := run([]string{"demo", "save-library", "--root", root}); err != nil {
-		t.Fatalf("run demo save-library: %v", err)
-	}
+	archived := cliTestTool("csv_numeric_summary", "data_analysis", "python", []string{"csv", "numeric", "summary"})
+	archived.LifecycleStatus = domain.LifecycleArchived
+	seedTool(t, root, archived)
 
-	assertFile(t, filepath.Join(root, "libraries", "pdf_parser", "manifest.json"))
-	assertFile(t, filepath.Join(root, "libraries", "pdf_parser", "versions", "v1", "source", "parser.py"))
-	assertFile(t, filepath.Join(root, "registry", "metadata", "libraries", "pdf_parser.json"))
+	retrieval, err := service.NewRetrievalService(service.RetrievalServiceConfig{
+		IntentExtractor: localretriever.IntentExtractor{
+			SemanticTopK: 10,
+			FilterTopK:   10,
+			RankTopK:     5,
+			Filters:      domain.RetrievalFilters{AllowedStatuses: domain.DefaultRetrievableStatuses()},
+		},
+		ToolRetriever: localretriever.NewToolRetriever(root),
+		Ranker:        localretriever.NewCapabilityRanker(),
+	})
+	if err != nil {
+		t.Fatalf("new retrieval service: %v", err)
+	}
+	result, err := retrieval.Search(context.Background(), domain.TaskSpec{Intent: "csv numeric summary"})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(result.Candidates) != 0 {
+		t.Fatalf("archived tool surfaced in default search: %+v", result.Candidates)
+	}
 }
 
 func TestRunSearchLibraries(t *testing.T) {
 	root := t.TempDir()
-	if err := run([]string{"demo", "save-library", "--root", root}); err != nil {
-		t.Fatalf("run demo save-library: %v", err)
-	}
-	if err := run([]string{"search", "libraries", "--root", root, "--query", "pdf parser", "--limit", "1"}); err != nil {
+	seedLibrary(t, root, cliTestLibrary("csv_stats_core", "data_analysis", "python", []string{"csv", "numeric", "statistics"}))
+
+	if err := run([]string{"search", "libraries", "--root", root, "--query", "csv numeric statistics", "--limit", "1"}); err != nil {
 		t.Fatalf("run search libraries: %v", err)
 	}
 }
@@ -66,17 +73,14 @@ func TestRunSearchLibrariesRequiresQuery(t *testing.T) {
 	}
 }
 
-func TestRunDemoLinkToolLibrary(t *testing.T) {
+func TestRunDepsGraph(t *testing.T) {
 	root := t.TempDir()
-	if err := run([]string{"demo", "link-tool-library", "--root", root}); err != nil {
-		t.Fatalf("run demo link-tool-library: %v", err)
-	}
+	seedLinkedCapabilities(t, root)
 
-	assertFile(t, filepath.Join(root, "registry", "dependency_graph", "pdf_to_excel.json"))
-	if err := run([]string{"deps", "graph", "--root", root, "--id", "pdf_to_excel"}); err != nil {
+	if err := run([]string{"deps", "graph", "--root", root, "--id", "csv_numeric_summary"}); err != nil {
 		t.Fatalf("run deps graph: %v", err)
 	}
-	if err := run([]string{"deps", "check", "--root", root, "--id", "pdf_to_excel"}); err != nil {
+	if err := run([]string{"deps", "check", "--root", root, "--id", "csv_numeric_summary"}); err != nil {
 		t.Fatalf("run deps check: %v", err)
 	}
 }
@@ -95,18 +99,16 @@ func TestRunDepsCheckRequiresID(t *testing.T) {
 
 func TestRunLifecycleScan(t *testing.T) {
 	root := t.TempDir()
-	if err := run([]string{"demo", "save-tool", "--root", root}); err != nil {
-		t.Fatalf("run demo save-tool: %v", err)
-	}
+	seedTool(t, root, cliTestTool("csv_numeric_summary", "data_analysis", "python", []string{"csv", "numeric", "summary"}))
 
 	stores := filesystem.NewStores(root)
-	tool, err := stores.Tools.Get(context.Background(), "pdf_to_excel")
+	tool, err := stores.Tools.Get(context.Background(), "csv_numeric_summary")
 	if err != nil {
-		t.Fatalf("get demo tool: %v", err)
+		t.Fatalf("get tool: %v", err)
 	}
 	tool.UpdatedAt = time.Now().UTC().Add(-48 * time.Hour)
 	if err := stores.Tools.Update(context.Background(), tool); err != nil {
-		t.Fatalf("age demo tool: %v", err)
+		t.Fatalf("age tool: %v", err)
 	}
 
 	if err := run([]string{
@@ -129,13 +131,92 @@ func TestRunUnknownCommand(t *testing.T) {
 	}
 }
 
-func assertFile(t *testing.T, path string) {
-	t.Helper()
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("expected file %s: %v", path, err)
+func TestRunRemovedDemoCommand(t *testing.T) {
+	if err := run([]string{"demo", "save-tool"}); err == nil {
+		t.Fatal("demo command must stay removed rather than ship fabricated capabilities")
 	}
-	if info.IsDir() {
-		t.Fatalf("expected file %s, got directory", path)
+}
+
+func seedTool(t *testing.T, root string, tool domain.Tool) {
+	t.Helper()
+	stores := filesystem.NewStores(root)
+	if err := stores.Tools.Save(context.Background(), tool); err != nil {
+		t.Fatalf("save tool: %v", err)
+	}
+	if err := stores.Registry.UpsertToolMetadata(context.Background(), tool); err != nil {
+		t.Fatalf("upsert tool metadata: %v", err)
+	}
+}
+
+func seedLibrary(t *testing.T, root string, library domain.Library) {
+	t.Helper()
+	stores := filesystem.NewStores(root)
+	if err := stores.Libraries.Save(context.Background(), library); err != nil {
+		t.Fatalf("save library: %v", err)
+	}
+	if err := stores.Registry.UpsertLibraryMetadata(context.Background(), library); err != nil {
+		t.Fatalf("upsert library metadata: %v", err)
+	}
+}
+
+func seedLinkedCapabilities(t *testing.T, root string) {
+	t.Helper()
+	tool := cliTestTool("csv_numeric_summary", "data_analysis", "python", []string{"csv", "numeric", "summary"})
+	library := cliTestLibrary("csv_stats_core", "data_analysis", "python", []string{"csv", "numeric", "statistics"})
+	seedTool(t, root, tool)
+	seedLibrary(t, root, library)
+	memory, err := newCapabilityMemory(root)
+	if err != nil {
+		t.Fatalf("new capability memory: %v", err)
+	}
+	if _, err := memory.LinkToolLibraries(context.Background(), tool, []domain.Library{library}); err != nil {
+		t.Fatalf("link tool library: %v", err)
+	}
+}
+
+func cliTestTool(name, category, runtime string, tags []string) domain.Tool {
+	now := time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC)
+	return domain.Tool{
+		ID:              name,
+		Name:            name,
+		Description:     "Compute numeric summary statistics over CSV columns.",
+		Category:        category,
+		CurrentVersion:  "v1",
+		LifecycleStatus: domain.LifecycleApproved,
+		TrustLevel:      domain.TrustValidated,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		Manifest: domain.ToolManifest{
+			Name:         name,
+			Description:  "Compute numeric summary statistics over CSV columns.",
+			Category:     category,
+			Runtime:      runtime,
+			EntryPoint:   "main.py",
+			Capabilities: tags,
+			Tags:         tags,
+			Environment:  domain.EnvironmentSpec{Runtime: runtime},
+		},
+	}
+}
+
+func cliTestLibrary(name, category, runtime string, tags []string) domain.Library {
+	now := time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC)
+	return domain.Library{
+		ID:              name,
+		Name:            name,
+		Description:     "Shared CSV statistics primitives.",
+		Category:        category,
+		CurrentVersion:  "v1",
+		LifecycleStatus: domain.LifecycleApproved,
+		TrustLevel:      domain.TrustValidated,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		Manifest: domain.LibraryManifest{
+			Name:        name,
+			Description: "Shared CSV statistics primitives.",
+			Category:    category,
+			Runtime:     runtime,
+			Tags:        tags,
+		},
 	}
 }

@@ -1,0 +1,99 @@
+{
+  "Name": "csv_reporting_reuse",
+  "Description": "Three reporting tasks that need the same numeric CSV summary. The first run lacks the capability and generates it; later runs should reuse the stored tool instead of regenerating.",
+  "Metadata": {
+    "note": "Token counts are the generation cost the Agent would have spent, supplied by the suite. EvoTool does not call a model in this benchmark."
+  },
+  "Tasks": [
+    {
+      "Name": "monthly_revenue_summary",
+      "Spec": {
+        "Intent": "Summarize the amount column of a monthly revenue CSV",
+        "InputSummary": "csv text with an amount column",
+        "ExpectedOutput": "count, total and average of the amount column",
+        "Domain": "data_processing"
+      },
+      "Package": {
+        "Manifest": {
+          "Name": "csv_numeric_summary",
+          "Description": "Analyze CSV numeric values and return row count, total and average",
+          "Category": "data_processing",
+          "Runtime": "python",
+          "EntryPoint": "main.py",
+          "Capabilities": ["csv_analysis", "numeric_summary"],
+          "Tags": ["csv", "numeric", "summary", "report"],
+          "InputSchema": {"type": "object", "required": ["csv", "column"], "properties": {"csv": {"type": "string"}, "column": {"type": "string"}}},
+          "OutputSchema": {"type": "object", "required": ["count", "total", "average"], "properties": {"count": {"type": "integer"}, "total": {"type": "number"}, "average": {"type": "number"}}},
+          "Permissions": {"Network": "none"},
+          "ResourceLimits": {"MaxRuntimeMs": 30000, "MaxMemoryBytes": 67108864, "MaxOutputBytes": 65536},
+          "Examples": [{"Input": "{\"csv\":\"amount\\n10\\n20\\n30\\n\",\"column\":\"amount\"}", "Output": "{\"count\":3,\"total\":60.0,\"average\":20.0}"}]
+        },
+        "SourceFiles": [{"Path": "main.py", "Content": "import csv, io, json, sys\n\ndef summarize(payload):\n    values = [float(row[payload['column']]) for row in csv.DictReader(io.StringIO(payload['csv']))]\n    return {'count': len(values), 'total': sum(values), 'average': sum(values) / len(values) if values else 0}\n\nif __name__ == '__main__':\n    print(json.dumps(summarize(json.load(sys.stdin))))\n"}],
+        "Tests": [{"Path": "tests/check_summary.py", "Content": "from main import summarize\nassert summarize({'csv':'amount\\n10\\n20\\n30\\n','column':'amount'}) == {'count':3,'total':60,'average':20}\nprint('ok')\n"}],
+        "GenerationReason": "External agent needs reusable numeric CSV summary for recurring reports"
+      },
+      "TokenUsage": {"PromptTokens": 900, "CompletionTokens": 300, "TotalTokens": 1200},
+      "Input": {"csv": "amount\n10\n20\n30\n", "column": "amount"}
+    },
+    {
+      "Name": "quarterly_revenue_summary",
+      "Spec": {
+        "Intent": "Summarize the amount column of a quarterly revenue CSV",
+        "InputSummary": "csv text with an amount column",
+        "ExpectedOutput": "count, total and average of the amount column",
+        "Domain": "data_processing"
+      },
+      "Package": {
+        "Manifest": {
+          "Name": "csv_numeric_summary",
+          "Description": "Analyze CSV numeric values and return row count, total and average",
+          "Category": "data_processing",
+          "Runtime": "python",
+          "EntryPoint": "main.py",
+          "Capabilities": ["csv_analysis", "numeric_summary"],
+          "Tags": ["csv", "numeric", "summary", "report"],
+          "InputSchema": {"type": "object", "required": ["csv", "column"], "properties": {"csv": {"type": "string"}, "column": {"type": "string"}}},
+          "OutputSchema": {"type": "object", "required": ["count", "total", "average"], "properties": {"count": {"type": "integer"}, "total": {"type": "number"}, "average": {"type": "number"}}},
+          "Permissions": {"Network": "none"},
+          "ResourceLimits": {"MaxRuntimeMs": 30000, "MaxMemoryBytes": 67108864, "MaxOutputBytes": 65536},
+          "Examples": [{"Input": "{\"csv\":\"amount\\n10\\n20\\n30\\n\",\"column\":\"amount\"}", "Output": "{\"count\":3,\"total\":60.0,\"average\":20.0}"}]
+        },
+        "SourceFiles": [{"Path": "main.py", "Content": "import csv, io, json, sys\n\ndef summarize(payload):\n    values = [float(row[payload['column']]) for row in csv.DictReader(io.StringIO(payload['csv']))]\n    return {'count': len(values), 'total': sum(values), 'average': sum(values) / len(values) if values else 0}\n\nif __name__ == '__main__':\n    print(json.dumps(summarize(json.load(sys.stdin))))\n"}],
+        "Tests": [{"Path": "tests/check_summary.py", "Content": "from main import summarize\nassert summarize({'csv':'amount\\n10\\n20\\n30\\n','column':'amount'}) == {'count':3,'total':60,'average':20}\nprint('ok')\n"}],
+        "GenerationReason": "Same numeric CSV summary needed again for quarterly reporting"
+      },
+      "TokenUsage": {"PromptTokens": 900, "CompletionTokens": 300, "TotalTokens": 1200},
+      "Input": {"csv": "amount\n40\n60\n", "column": "amount"}
+    },
+    {
+      "Name": "hourly_amount_summary",
+      "Spec": {
+        "Intent": "Summarize the amount column of an hourly sales CSV",
+        "InputSummary": "csv text with an amount column",
+        "ExpectedOutput": "count, total and average of the amount column",
+        "Domain": "data_processing"
+      },
+      "Package": {
+        "Manifest": {
+          "Name": "csv_numeric_summary",
+          "Description": "Analyze CSV numeric values and return row count, total and average",
+          "Category": "data_processing",
+          "Runtime": "python",
+          "EntryPoint": "main.py",
+          "Capabilities": ["csv_analysis", "numeric_summary"],
+          "Tags": ["csv", "numeric", "summary", "report"],
+          "InputSchema": {"type": "object", "required": ["csv", "column"], "properties": {"csv": {"type": "string"}, "column": {"type": "string"}}},
+          "OutputSchema": {"type": "object", "required": ["count", "total", "average"], "properties": {"count": {"type": "integer"}, "total": {"type": "number"}, "average": {"type": "number"}}},
+          "Permissions": {"Network": "none"},
+          "ResourceLimits": {"MaxRuntimeMs": 30000, "MaxMemoryBytes": 67108864, "MaxOutputBytes": 65536},
+          "Examples": [{"Input": "{\"csv\":\"amount\\n10\\n20\\n30\\n\",\"column\":\"amount\"}", "Output": "{\"count\":3,\"total\":60.0,\"average\":20.0}"}]
+        },
+        "SourceFiles": [{"Path": "main.py", "Content": "import csv, io, json, sys\n\ndef summarize(payload):\n    values = [float(row[payload['column']]) for row in csv.DictReader(io.StringIO(payload['csv']))]\n    return {'count': len(values), 'total': sum(values), 'average': sum(values) / len(values) if values else 0}\n\nif __name__ == '__main__':\n    print(json.dumps(summarize(json.load(sys.stdin))))\n"}],
+        "Tests": [{"Path": "tests/check_summary.py", "Content": "from main import summarize\nassert summarize({'csv':'amount\\n10\\n20\\n30\\n','column':'amount'}) == {'count':3,'total':60,'average':20}\nprint('ok')\n"}],
+        "GenerationReason": "Same numeric CSV summary needed again for hourly sales"
+      },
+      "TokenUsage": {"PromptTokens": 900, "CompletionTokens": 300, "TotalTokens": 1200},
+      "Input": {"csv": "amount\n5\n15\n", "column": "amount"}
+    }
+  ]
+}

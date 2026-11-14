@@ -30,10 +30,10 @@ func run(args []string) error {
 	switch args[0] {
 	case "learn", "execute":
 		return runToolWorkflow(args[0], args[1:])
-	case "demo":
-		return runDemo(args[1:])
 	case "search":
 		return runSearch(args[1:])
+	case "benchmark":
+		return runBenchmark(args[1:])
 	case "deps":
 		return runDeps(args[1:])
 	case "lifecycle":
@@ -43,42 +43,6 @@ func run(args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
-	}
-}
-
-func runDemo(args []string) error {
-	if len(args) == 0 {
-		printDemoUsage()
-		return nil
-	}
-
-	switch args[0] {
-	case "save-tool":
-		flags := flag.NewFlagSet("demo save-tool", flag.ContinueOnError)
-		root := flags.String("root", filesystem.DefaultRoot, "EvoTool memory root directory")
-		if err := flags.Parse(args[1:]); err != nil {
-			return err
-		}
-		return saveDemoTool(*root)
-	case "save-library":
-		flags := flag.NewFlagSet("demo save-library", flag.ContinueOnError)
-		root := flags.String("root", filesystem.DefaultRoot, "EvoTool memory root directory")
-		if err := flags.Parse(args[1:]); err != nil {
-			return err
-		}
-		return saveDemoLibrary(*root)
-	case "link-tool-library":
-		flags := flag.NewFlagSet("demo link-tool-library", flag.ContinueOnError)
-		root := flags.String("root", filesystem.DefaultRoot, "EvoTool memory root directory")
-		if err := flags.Parse(args[1:]); err != nil {
-			return err
-		}
-		return linkDemoToolLibrary(*root)
-	case "help", "-h", "--help":
-		printDemoUsage()
-		return nil
-	default:
-		return fmt.Errorf("unknown demo command %q", args[0])
 	}
 }
 
@@ -98,6 +62,36 @@ func runSearch(args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("unknown search command %q", args[0])
+	}
+}
+
+func runBenchmark(args []string) error {
+	if len(args) == 0 {
+		printBenchmarkUsage()
+		return nil
+	}
+
+	switch args[0] {
+	case "run":
+		flags := flag.NewFlagSet("benchmark run", flag.ContinueOnError)
+		root := flags.String("root", filesystem.DefaultRoot, "EvoTool memory root directory")
+		suitePath := flags.String("suite", "", "benchmark suite JSON file")
+		outPath := flags.String("out", "", "optional result JSON file")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 {
+			return fmt.Errorf("unexpected positional arguments")
+		}
+		if strings.TrimSpace(*suitePath) == "" {
+			return fmt.Errorf("benchmark suite file is required")
+		}
+		return runBenchmarkSuite(*root, *suitePath, *outPath)
+	case "help", "-h", "--help":
+		printBenchmarkUsage()
+		return nil
+	default:
+		return fmt.Errorf("unknown benchmark command %q", args[0])
 	}
 }
 
@@ -243,77 +237,8 @@ func runSearchLibraries(args []string) error {
 	})
 }
 
-func saveDemoTool(root string) error {
-	memory, err := newCapabilityMemory(root)
-	if err != nil {
-		return err
-	}
-
-	tool := demoPDFToExcelTool()
-	if err := memory.SaveTool(context.Background(), tool); err != nil {
-		return fmt.Errorf("save demo tool: %w", err)
-	}
-
-	fmt.Printf("saved demo tool %q into %s\n", tool.Name, root)
-	return nil
-}
-
-func saveDemoLibrary(root string) error {
-	memory, err := newCapabilityMemory(root)
-	if err != nil {
-		return err
-	}
-
-	library := demoPDFParserLibrary()
-	if err := memory.SaveLibrary(context.Background(), library); err != nil {
-		return fmt.Errorf("save demo library: %w", err)
-	}
-
-	fmt.Printf("saved demo library %q into %s\n", library.Name, root)
-	return nil
-}
-
-func linkDemoToolLibrary(root string) error {
-	memory, err := newCapabilityMemory(root)
-	if err != nil {
-		return err
-	}
-
-	ctx := context.Background()
-	tool := demoPDFToExcelTool()
-	library := demoPDFParserLibrary()
-	if err := memory.SaveTool(ctx, tool); err != nil {
-		return fmt.Errorf("save demo tool: %w", err)
-	}
-	if err := memory.SaveLibrary(ctx, library); err != nil {
-		return fmt.Errorf("save demo library: %w", err)
-	}
-	graph, err := memory.LinkToolLibraries(ctx, tool, []domain.Library{library})
-	if err != nil {
-		return fmt.Errorf("link demo dependency: %w", err)
-	}
-	printDependencyGraph(graph)
-	return nil
-}
-
 func searchTools(options searchToolOptions) error {
-	// Default retrieval never surfaces archived, quarantined, or deleted Tools.
-	filters := domain.RetrievalFilters{Runtime: options.runtime, AllowedStatuses: domain.DefaultRetrievableStatuses()}
-	if options.noNetwork {
-		allowed := false
-		filters.NetworkAllowed = &allowed
-	}
-
-	retrieval, err := service.NewRetrievalService(service.RetrievalServiceConfig{
-		IntentExtractor: localretriever.IntentExtractor{
-			SemanticTopK: 50,
-			FilterTopK:   maxInt(options.limit*4, options.limit),
-			RankTopK:     options.limit,
-			Filters:      filters,
-		},
-		ToolRetriever: localretriever.NewToolRetriever(options.root),
-		Ranker:        localretriever.NewCapabilityRanker(),
-	})
+	retrieval, err := newRetrievalService(options.root, options)
 	if err != nil {
 		return fmt.Errorf("create retrieval service: %w", err)
 	}
@@ -423,6 +348,56 @@ func newCapabilityMemory(root string) (*service.CapabilityMemoryService, error) 
 		return nil, fmt.Errorf("create capability memory: %w", err)
 	}
 	return memory, nil
+}
+
+// newBenchmarkService assembles the benchmark path from the same retrieval and
+// policy implementations the CLI uses, so a reported saving reflects the real
+// search pipeline rather than a benchmark-only shortcut.
+func newBenchmarkService(root string) (*service.BenchmarkService, error) {
+	memory, err := newCapabilityMemory(root)
+	if err != nil {
+		return nil, err
+	}
+	retrieval, err := newRetrievalService(root, searchToolOptions{runtime: "", limit: 3})
+	if err != nil {
+		return nil, err
+	}
+	policy, err := service.NewPolicyService(service.PolicyServiceConfig{
+		ResourceLimits: domain.ResourceLimits{
+			MaxRuntimeMs:   30000,
+			MaxMemoryBytes: 268435456,
+			MaxOutputBytes: 1048576,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return service.NewBenchmarkService(service.BenchmarkServiceConfig{
+		Retrieval: retrieval,
+		Memory:    memory,
+		Policy:    policy,
+	})
+}
+
+func newRetrievalService(root string, options searchToolOptions) (*service.RetrievalService, error) {
+	filters := domain.RetrievalFilters{
+		Runtime:         options.runtime,
+		AllowedStatuses: domain.DefaultRetrievableStatuses(),
+	}
+	if options.noNetwork {
+		allowed := false
+		filters.NetworkAllowed = &allowed
+	}
+	return service.NewRetrievalService(service.RetrievalServiceConfig{
+		IntentExtractor: localretriever.IntentExtractor{
+			SemanticTopK: 50,
+			FilterTopK:   maxInt(options.limit*4, options.limit),
+			RankTopK:     options.limit,
+			Filters:      filters,
+		},
+		ToolRetriever: localretriever.NewToolRetriever(root),
+		Ranker:        localretriever.NewCapabilityRanker(),
+	})
 }
 
 func printSearchResults(result domain.RetrievalResult) {
@@ -591,204 +566,36 @@ func maxInt(a int, b int) int {
 	return b
 }
 
-func demoPDFParserLibrary() domain.Library {
-	now := time.Now().UTC()
-	return domain.Library{
-		ID:              "pdf_parser",
-		Name:            "pdf_parser",
-		Description:     "Parse PDF documents and extract structured tables.",
-		Category:        "document_processing",
-		CurrentVersion:  "v1",
-		LifecycleStatus: domain.LifecycleApproved,
-		TrustLevel:      domain.TrustValidated,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-		Manifest: domain.LibraryManifest{
-			Name:        "pdf_parser",
-			Description: "Reusable PDF parsing and table extraction primitives.",
-			Category:    "document_processing",
-			Runtime:     "python",
-			Exports: []domain.LibraryExport{
-				{Name: "parse_pdf", Kind: "function", Description: "Parse a PDF document."},
-				{Name: "extract_tables", Kind: "function", Description: "Extract tables from a parsed PDF."},
-			},
-			Tags: []string{"pdf", "parser", "table", "document"},
-		},
-		Versions: []domain.LibraryVersion{
-			{
-				Version:   "v1",
-				CreatedAt: now,
-				Files: []domain.SourceFile{
-					{Path: "source/parser.py", Content: demoPDFParserSource()},
-					{Path: "README.md", Content: demoLibraryReadme()},
-				},
-			},
-		},
-	}
-}
-
-func demoPDFParserSource() string {
-	return `def parse_pdf(path):
-    return {"path": path, "pages": []}
-
-
-def extract_tables(parsed_pdf):
-    return parsed_pdf.get("tables", [])
-`
-}
-
-func demoLibraryReadme() string {
-	return `# pdf_parser
-
-Reusable PDF parsing library for generated EvoTool tools.
-`
-}
-
-func demoPDFToExcelTool() domain.Tool {
-	now := time.Now().UTC()
-	return domain.Tool{
-		ID:              "pdf_to_excel",
-		Name:            "pdf_to_excel",
-		Description:     "Demo tool that represents converting PDF tables to Excel.",
-		Category:        "document_processing",
-		CurrentVersion:  "v1",
-		LifecycleStatus: domain.LifecycleApproved,
-		TrustLevel:      domain.TrustValidated,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-		Manifest: domain.ToolManifest{
-			Name:         "pdf_to_excel",
-			Description:  "Convert PDF tables to Excel format. This demo implementation only returns a derived xlsx path.",
-			Category:     "document_processing",
-			Runtime:      "python",
-			EntryPoint:   "main.py",
-			Capabilities: []string{"pdf_table_extraction", "xlsx_generation"},
-			Tags:         []string{"pdf", "table", "excel", "document"},
-			InputSchema: map[string]any{
-				"type":     "object",
-				"required": []string{"file"},
-				"properties": map[string]any{
-					"file": map[string]any{"type": "string", "description": "PDF file path"},
-				},
-			},
-			OutputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"xlsx_path": map[string]any{"type": "string", "description": "Generated xlsx path"},
-				},
-			},
-			Examples: []domain.ManifestExample{
-				{Input: `{"file":"report.pdf"}`, Output: `{"xlsx_path":"report.xlsx"}`, Description: "Convert report.pdf to report.xlsx"},
-			},
-			Environment: domain.EnvironmentSpec{Runtime: "python", Network: false},
-			Permissions: domain.PermissionSet{Network: domain.NetworkPolicyNone},
-			ResourceLimits: domain.ResourceLimits{
-				MaxRuntimeMs:   5000,
-				MaxMemoryBytes: 128 * 1024 * 1024,
-				MaxOutputBytes: 1024 * 1024,
-			},
-		},
-		Versions: []domain.ToolVersion{
-			{
-				Version:   "v1",
-				CreatedAt: now,
-				Files: []domain.SourceFile{
-					{Path: "main.py", Content: demoPythonToolSource()},
-					{Path: "README.md", Content: demoToolReadme()},
-					{Path: "tests/test_main.py", Content: demoPythonToolTest()},
-				},
-			},
-		},
-	}
-}
-
-func demoPythonToolSource() string {
-	return `#!/usr/bin/env python3
-import json
-import os
-import sys
-
-
-def main():
-    payload = json.load(sys.stdin)
-    pdf_path = payload.get("file", "input.pdf")
-    base, _ = os.path.splitext(pdf_path)
-    print(json.dumps({"xlsx_path": base + ".xlsx"}))
-
-
-if __name__ == "__main__":
-    main()
-`
-}
-
-func demoToolReadme() string {
-	return `# pdf_to_excel
-
-Demo generated tool for EvoTool.
-
-This demo does not parse real PDFs yet. It exists to prove that EvoTool can save a generated tool package into capability memory.
-`
-}
-
-func demoPythonToolTest() string {
-	return `import json
-import subprocess
-import sys
-
-
-def test_demo_tool_outputs_xlsx_path():
-    proc = subprocess.run(
-        [sys.executable, "main.py"],
-        input=json.dumps({"file": "report.pdf"}),
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-    assert json.loads(proc.stdout)["xlsx_path"] == "report.xlsx"
-`
-}
-
 func printUsage() {
 	fmt.Println(`EvoTool
 
 Usage:
   evotool learn --package generated.json [--root .evotool] [--image python:3.13-alpine]
   evotool execute --id csv_analyzer --input input.json [--root .evotool]
-  evotool demo save-tool [--root .evotool]
-  evotool demo save-library [--root .evotool]
-  evotool demo link-tool-library [--root .evotool]
-  evotool search tools --query "pdf excel" [--root .evotool]
-  evotool search libraries --query "pdf parser" [--root .evotool]
-  evotool deps graph --id pdf_to_excel [--root .evotool]
-  evotool deps check --id pdf_to_excel [--root .evotool]
+  evotool benchmark run --suite benchmark.json [--root .evotool] [--out result.json]
+  evotool search tools --query "csv numeric summary" [--root .evotool]
+  evotool search libraries --query "csv numeric summary" [--root .evotool]
+  evotool deps graph --id csv_numeric_summary [--root .evotool]
+  evotool deps check --id csv_numeric_summary [--root .evotool]
   evotool lifecycle scan [--root .evotool] [--stale-days 90] [--archive-days 180]
   evotool help`)
-}
-
-func printDemoUsage() {
-	fmt.Println(`EvoTool demo commands
-
-Usage:
-  evotool demo save-tool [--root .evotool]
-  evotool demo save-library [--root .evotool]
-  evotool demo link-tool-library [--root .evotool]`)
 }
 
 func printSearchUsage() {
 	fmt.Println(`EvoTool search commands
 
 Usage:
-  evotool search tools --query "pdf excel" [--root .evotool]
-  evotool search libraries --query "pdf parser" [--root .evotool]
-  evotool search tools "pdf excel" --category document_processing --runtime python`)
+  evotool search tools --query "csv numeric summary" [--root .evotool]
+  evotool search libraries --query "csv statistics" [--root .evotool]
+  evotool search tools "csv numeric summary" --category data_processing --runtime python`)
 }
 
 func printDepsUsage() {
 	fmt.Println(`EvoTool dependency commands
 
 Usage:
-  evotool deps graph --id pdf_to_excel [--root .evotool]
-  evotool deps check --id pdf_to_excel [--root .evotool]`)
+  evotool deps graph --id csv_numeric_summary [--root .evotool]
+  evotool deps check --id csv_numeric_summary [--root .evotool]`)
 }
 
 func printLifecycleUsage() {

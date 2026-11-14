@@ -20,6 +20,7 @@ type CapabilityMemoryServiceConfig struct {
 	RetrievalService  *RetrievalService
 	LibraryRetriever  ports.LibraryRetriever
 	ExecutionService  *ExecutionService
+	BenchmarkService  *BenchmarkService
 }
 
 // CapabilityMemoryService provides the main application operations for EvoTool memory.
@@ -33,6 +34,7 @@ type CapabilityMemoryService struct {
 	libraryRetriever ports.LibraryRetriever
 	dependency       *DependencyService
 	execution        *ExecutionService
+	benchmark        *BenchmarkService
 }
 
 // NewCapabilityMemoryService creates the capability memory facade.
@@ -65,7 +67,16 @@ func NewCapabilityMemoryService(config CapabilityMemoryServiceConfig) (*Capabili
 		libraryRetriever: config.LibraryRetriever,
 		dependency:       dependency,
 		execution:        config.ExecutionService,
+		benchmark:        config.BenchmarkService,
 	}, nil
+}
+
+// RunBenchmark compares generation cost with and without capability memory.
+func (s *CapabilityMemoryService) RunBenchmark(ctx context.Context, suite domain.BenchmarkSuite) (domain.BenchmarkReport, error) {
+	if s.benchmark == nil {
+		return domain.BenchmarkReport{}, fmt.Errorf("%w: benchmark service", ErrMissingDependency)
+	}
+	return s.benchmark.Run(ctx, suite)
 }
 
 // ExecuteTool delegates checked execution to the configured execution service.
