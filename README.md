@@ -6,6 +6,8 @@ A capability memory layer that allows AI agents to discover, reuse, and evolve g
 
 EvoTool helps AI agents turn one-off generated scripts into validated, searchable, reusable, and evolvable capabilities. Instead of regenerating the same helper code for similar tasks, an agent can build a capability memory and reuse proven tools and shared libraries across future work.
 
+For the design reasoning, the progress as of the latest commit, and the tradeoffs still unresolved, read [the project write-up](docs/blog-capability-memory.md).
+
 ## Quick Start
 
 External agents submit Python tool packages for sandbox validation and reuse. See [the learning workflow and one-command acceptance test](docs/learning.md). This path requires a running Docker Linux engine and a prepared Python image; it does not embed an LLM.
