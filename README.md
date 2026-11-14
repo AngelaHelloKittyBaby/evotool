@@ -1,8 +1,8 @@
 ﻿# EvoTool
 
-A capability memory layer that allows AI agents to discover, reuse, and evolve generated tools.
+**English** | [简体中文](README.zh-CN.md)
 
-中文定位：一个让 Agent 学会积累、复用和演进能力的能力记忆层。
+A capability memory layer that allows AI agents to discover, reuse, and evolve generated tools.
 
 EvoTool helps AI agents turn one-off generated scripts into validated, searchable, reusable, and evolvable capabilities. Instead of regenerating the same helper code for similar tasks, an agent can build a capability memory and reuse proven tools and shared libraries across future work.
 
@@ -108,9 +108,9 @@ Each tool should have a semantic name, a manifest, tests, documentation, executi
 
 ## Tool Lifecycle and Retention
 
-能力库会随着 Agent 持续生成工具而增长。如果所有历史工具都永久参与检索，候选数量、检索噪声和维护成本都会不断增加。因此 EvoTool 需要提供工具保留策略，根据使用情况治理长期未使用的 Tool。
+A capability library keeps growing as an agent generates more tools. If every historical tool stayed in retrieval forever, the candidate pool, retrieval noise, and maintenance cost would all keep climbing. EvoTool therefore needs a retention policy that governs Tools left unused for a long time.
 
-第一版设计不采用“长时间没用过就立即删除”，而是采用分阶段生命周期：
+The first version does not delete a tool the moment it stops being used. It applies a staged lifecycle:
 
 ```text
 active
@@ -119,46 +119,46 @@ active
   -> deleted
 ```
 
-- `active`：正常参与检索和执行。
-- `stale`：长时间未使用，降低检索优先级并等待复查。
-- `archived`：默认不参与检索，但保留 Tool 文件、版本和元数据，可以恢复。
-- `deleted`：满足安全条件后才允许物理删除。
+- `active`: participates in retrieval and execution normally.
+- `stale`: unused for a long time; demoted in retrieval priority and awaiting review.
+- `archived`: excluded from retrieval by default, but Tool files, versions, and metadata are kept and can be restored.
+- `deleted`: physical deletion only after the safety conditions are met.
 
-生命周期判断应综合以下信息，而不是只看最后使用时间：
+Lifecycle decisions should combine the following signals instead of last-used time alone:
 
 - `last_used_at`
 - `usage_count`
 - `last_successful_at`
 - `success_rate`
 - `last_validated_at`
-- 是否被其他 Tool 或 Library 依赖
-- 是否被标记为 `pinned`
-- 是否仍在保留期限内
-- 是否存在可替代的新版本
+- Whether other Tools or Libraries depend on it
+- Whether it is marked `pinned`
+- Whether it is still inside its retention window
+- Whether a replacement version exists
 
-推荐治理流程：
+Recommended governance flow:
 
 ```text
-定期扫描
-  -> 识别长期未使用 Tool
-  -> 标记 stale
-  -> 到期后归档
-  -> 从默认检索集合移除
-  -> 保留恢复入口
-  -> 满足全部条件后才允许人工确认删除
+Periodic scan
+  -> Identify Tools unused for a long time
+  -> Mark stale
+  -> Archive once the window elapses
+  -> Remove from the default retrieval set
+  -> Keep a restore entry point
+  -> Allow manual confirmed deletion only when every condition holds
 ```
 
-默认检索只选择 `approved`、`active`、`stale` 三种状态，实现位于 `domain.DefaultRetrievableStatuses()`。`archived`、`quarantined`、`deleted`、`draft`、`validated` 不会出现在默认搜索结果中，调用方可以用 `RetrievalFilters.AllowedStatuses` 显式覆盖。若正常检索没有结果，可以由 Agent 或管理员显式查询 `archived` 工具，避免低频但重要的年度报表、应急修复和季节性工具被永久丢失。
+Default retrieval selects only the `approved`, `active`, and `stale` states; the implementation lives in `domain.DefaultRetrievableStatuses()`. `archived`, `quarantined`, `deleted`, `draft`, and `validated` never appear in default search results, and callers can override this explicitly through `RetrievalFilters.AllowedStatuses`. When normal retrieval returns nothing, an Agent or administrator can explicitly query `archived` tools, so low-frequency but important annual reports, emergency fixes, and seasonal tools are not lost for good.
 
-删除前必须确认：
+Before deletion, all of the following must hold:
 
-- 没有其他能力依赖该 Tool。
-- 没有 `pinned` 或 `retain_until` 保护。
-- 已经超过归档保留期限。
-- 没有正在使用的版本。
-- 删除操作经过显式确认并记录审计日志。
+- No other capability depends on the Tool.
+- No `pinned` or `retain_until` protection is in force.
+- The archive retention window has elapsed.
+- No version is still in use.
+- The deletion was explicitly confirmed and written to the audit log.
 
-这项能力目前属于设计和后续实现阶段，当前 MVP 还不会自动归档或删除工具。详细方案见 [`docs/lifecycle.md`](docs/lifecycle.md)。
+This capability is still in the design and pending-implementation stage; the current MVP does not archive or delete tools automatically. See [`docs/lifecycle.md`](docs/lifecycle.md) for the full design.
 
 ### Libraries
 
