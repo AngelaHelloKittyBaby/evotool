@@ -23,6 +23,8 @@ type DependencyRef struct {
 	Kind     DependencyKind
 	Version  string
 	Optional bool
+	// Digest binds an executable library reference to validated source contents.
+	Digest string
 }
 
 // DependencyHealthStatus 表示依赖图的整体健康状态。

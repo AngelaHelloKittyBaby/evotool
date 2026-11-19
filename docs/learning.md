@@ -1,6 +1,6 @@
 # 外部 Agent 提交、验证和复用工具
 
-当前实现不内置大模型。外部 Agent 使用自己的模型生成 `domain.GeneratedTool` JSON，通过 CLI 提交；EvoTool 负责验证、隔离运行、保存和检索。仓库中的 `examples/csv-analysis/generated.json` 是固定的示例提交包，不是本次调用模型生成的结果。
+EvoTool 不捆绑模型。外部 Agent 可以提交 `domain.GeneratedTool` JSON，也可以配置模型 API 后使用 `generate`，见 [模型生成与实测 Benchmark](generation.md)。两条路径都经过验证、隔离运行、保存和检索。仓库中的 `examples/csv-analysis/generated.json` 是固定的示例提交包，不是模型现场生成的结果。
 
 ## 一键验收（PowerShell）
 
@@ -53,7 +53,7 @@ registry/audit/events.jsonl
 
 外部 Agent 应先搜索 Tool，已有能力则直接复用；未命中时先搜索 Library，再生成提交包。以 `examples/csv-analysis/generated.json` 为完整字段模板：Manifest、SourceFiles、Tests、GenerationReason 必填；Readme 可选。测试文件是可以直接运行、用 assert 或异常返回失败的 Python 脚本，不会自动通过 pytest 发现测试函数。每个 Examples 的 Input/Output 都是 JSON 对象字符串，工具从 stdin 接收对象并向 stdout 输出一个 JSON 对象。
 
-当前只支持无第三方依赖的 Python 工具，暂不装包、不执行 Library 引用；有这些依赖时明确拒绝。Library 搜索已有入口，但实际 Library 依赖挂载与执行还需要后续实现。
+当前支持无第三方包依赖的 Python 工具，并允许执行引用已批准的固定版本 Python Library；库的加载、源码摘要绑定和验证方式见 [可执行共享库](library-execution.md)。暂不安装第三方包，不支持传递依赖。
 
 Schema 支持 object、properties、required，以及 string、number、integer、boolean 属性；不支持的 schema 关键字明确拒绝，尚非完整 JSON Schema 验证器。
 

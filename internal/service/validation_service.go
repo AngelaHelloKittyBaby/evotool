@@ -14,7 +14,10 @@ import (
 )
 
 // ValidationService 在沙箱运行测试之前检查提交上来的包。
-type ValidationService struct{ Sandbox ports.Sandbox }
+type ValidationService struct {
+	Sandbox   ports.Sandbox
+	Libraries ports.LibrarySources
+}
 
 // ValidateGeneratedTool 校验 MVP 的 Python 契约；暂不支持安装依赖。
 func (s ValidationService) ValidateGeneratedTool(ctx context.Context, g domain.GeneratedTool) (domain.ValidationResult, error) {
@@ -39,7 +42,7 @@ func (s ValidationService) ValidateGeneratedTool(ctx context.Context, g domain.G
 	if m.Runtime != "python" || m.Environment.Network || (m.Environment.Runtime != "" && m.Environment.Runtime != "python") {
 		return reject("only offline Python packages supported")
 	}
-	if len(m.Dependencies)+len(m.LibraryRefs)+len(g.Dependencies) > 0 {
+	if len(m.Dependencies)+len(g.Dependencies) > 0 {
 		return reject("dependency installation and library execution not supported in this adapter yet")
 	}
 	policy, err := NewPolicyService(PolicyServiceConfig{ResourceLimits: domain.ResourceLimits{MaxRuntimeMs: 30000, MaxMemoryBytes: 268435456, MaxOutputBytes: 1048576}})
@@ -56,6 +59,21 @@ func (s ValidationService) ValidateGeneratedTool(ctx context.Context, g domain.G
 	files := append(append([]domain.SourceFile{}, g.SourceFiles...), g.Tests...)
 	if g.Readme != "" {
 		files = append(files, domain.SourceFile{Path: "README.md", Content: g.Readme})
+	}
+	if len(m.LibraryRefs) > 0 {
+		if s.Libraries == nil {
+			return reject("library resolver required")
+		}
+		for _, f := range files {
+			if f.Path == "shared" || strings.HasPrefix(f.Path, "shared/") {
+				return reject("shared namespace reserved for libraries")
+			}
+		}
+		resolved, _, err := s.Libraries.Resolve(ctx, m.LibraryRefs)
+		if err != nil {
+			return reject(err.Error())
+		}
+		files = append(files, resolved...)
 	}
 	seen := map[string]bool{}
 	size := 0
@@ -110,5 +128,8 @@ func (s ValidationService) ValidateGeneratedTool(ctx context.Context, g domain.G
 	r.SandboxReport = "tests and examples passed in configured sandbox"
 	r.PolicyReport = "offline, no host permissions"
 	r.DependencyReport = "no external dependencies"
+	if len(m.LibraryRefs) > 0 {
+		r.DependencyReport = "exact library versions and source digests checked"
+	}
 	return r, nil
 }

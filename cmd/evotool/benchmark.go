@@ -63,8 +63,11 @@ func printBenchmarkUsage() {
 
 Usage:
   evotool benchmark run --suite benchmark.json [--root .evotool] [--out result.json]
+  evotool benchmark live --suite live-suite.json --root dedicated-memory [--out report.json]
 
 The suite replays each task twice: baseline always generates a tool, evotool
 searches capability memory first. Token counts come from the suite, not from a
-model call; this benchmark measures reuse, not generation quality.`)
+model call; this benchmark measures reuse, not generation quality.
+The live command calls the configured model and runs sandbox validation and
+execution. It requires independent Expected outputs and reports provider usage.`)
 }

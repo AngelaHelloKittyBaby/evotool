@@ -163,9 +163,11 @@ pdf_to_excel --uses--> pdf_parser
 - Benchmark 统计 Library 复用次数。
 - 生命周期管理中判断是否需要 quarantine 或 deprecate。
 
-依赖图由学习流程写入：`evotool learn` 在验证和策略检查通过后，根据 Manifest 的 `LibraryRefs` 和 `Dependencies` 生成 `registry/dependency_graph/<tool-id>.json`。查询和检查通过 `evotool deps graph --id <tool-id>` 和 `evotool deps check --id <tool-id>` 完成。
+依赖图由学习流程写入：`evotool learn` 和 `evotool generate` 在验证和策略检查通过后，按解析后的 `LibraryRefs` 固定版本、绑定摘要并保存 `registry/dependency_graph/<tool-id>.json`。当前 Python 路径拒绝第三方包 `Dependencies` 和传递库依赖。查询和检查通过 `evotool deps graph --id <tool-id>` 和 `evotool deps check --id <tool-id>` 完成。
 
-依赖健康检查是执行前的最小 gate：它会读取依赖图，确认必需的 Library 是否存在，并检查版本约束是否匹配。当前状态会返回 `healthy`、`degraded` 或 `broken`，后续 ExecutionService 应在真正执行 Tool 之前调用这一步。
+依赖健康检查是执行前的最小 gate：它会读取依赖图，确认必需的 Library 是否存在，并检查版本约束是否匹配。状态为 `healthy`、`degraded` 或 `broken`，ExecutionService 已在调用 Executor 前执行检查；Python Executor 还会重新解析库并核对摘要及批准状态。库变更会阻止执行，目前不会自动重验证和提升版本。
+
+当前模型生成路径为：TaskSpec → 检索最多五个 Library 契约 → ToolGenerator → 解析固定库版本 → 验证与策略检查 → 保存 Tool 和 Registry。Generator 通过 HTTP Adapter 实现，核心 Service 只依赖 Ports。配置方法见 [模型生成](generation.md)，库注入规则见 [可执行共享库](library-execution.md)。
 
 ## 4.3 工具生命周期与长期未使用治理
 

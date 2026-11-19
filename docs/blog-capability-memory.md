@@ -1,6 +1,6 @@
 # 让 Agent 记住自己造过的轮子：EvoTool 的设计与当前进度
 
-> 写于 2026 年 11 月，对应提交 `7bf8d5c`。这是一篇阶段性记录，不是完成品宣言。
+> 初稿对应提交 `7bf8d5c`，实现状态更新于 2026-11-19。静态 Benchmark 的历史数字保留，新增能力及验证边界见第九、十节和 [文档导航](README.md)。
 
 ## 一、问题从哪里来
 
@@ -230,11 +230,11 @@ total tokens                       3600          0      -3600
 
 ### 这个数字的边界
 
-EvoTool 不内置大模型。任务的 `Package`（本该生成的产物）和 `TokenUsage`（本该花掉的钱）都由 suite 提供。
+这里讨论的是静态 `benchmark run`，不调用大模型。任务的 `Package`（本该生成的产物）和 `TokenUsage`（本该花掉的钱）都由 suite 提供。
 
 所以这 3600 token 是**本该花掉的生成成本**，不是实测账单。它测的是"复用替代了多少次生成"，不是模型生成质量。
 
-同样诚实地说，`SuccessRate` 和 `FailureRate` 现在保持为 0。这个 runner 重放的是复用决策，它没有真的执行生成的工具，填 1.0 就是一个没人测量过的断言。等真正的 `ToolGenerator` 接进来，这两个字段才有意义。
+静态 runner 的 `SuccessRate` 和 `FailureRate` 仍为 0，因为它只重放复用决策。现在另有 [live Benchmark](generation.md)：调用已配置的 ToolGenerator，沙箱验证并执行工具，通过独立 Expected 核验输出，记录响应 usage 和执行成功率。两种报告不能混用；尚无真实供应商的模型质量或费用收益结论。
 
 这条边界写在三个地方：代码注释、CLI 输出、[docs/benchmark.md](benchmark.md)。一个能被任意解读的数字比没有数字更糟。
 
@@ -252,7 +252,7 @@ EvoTool 不内置大模型。任务的 `Package`（本该生成的产物）和 `
 
 ## 九、当前真实状态
 
-截至 `7bf8d5c`，19 个提交，2026-10-05 至 2026-11-14。约 7000 行 Go（其中非测试代码 4656 行），69 个测试，总覆盖率 65.8%。
+以下为 2026-11-19 的实现状态。旧提交的测试数量和覆盖率不代表当前版本，最新验证方法及证据见 [verification.md](verification.md)。
 
 **能用的：**
 
@@ -264,27 +264,30 @@ EvoTool 不内置大模型。任务的 `Package`（本该生成的产物）和 `
 - Docker 沙箱验证与执行历史
 - fail-closed 安全策略
 - 只读生命周期扫描（stale / archive 候选）
-- baseline vs evotool 的 benchmark
+- 静态复用决策 Benchmark，以及生成、验证、执行、输出核验的 live Benchmark
+- 可执行 LibraryRefs：固定版本及摘要、验证与运行时注入库、变更后阻止执行
+- Chat Completions ToolGenerator：生成前检索 Library，生成后进入统一验证流程
+- MCP 只读 Adapter 原型（尚不具备完整协议兼容性）
 
 **不能用的：**
 
-- **`ToolGenerator` 没有实现。** 工具由外部 Agent 生成后提交，EvoTool 不调用模型。这是当前最大的缺口——它让整个学习流程少了一半。
-- **可执行的 Library 依赖。** `LibraryRefs` 会被记录、会被依赖检查，但 `validation_service.go` 直接拒绝带 Library 引用的提交。Library 能搜到，但用不上。
+- **真实供应商的生成质量与费用收益尚未验证。** 当前端到端证据是模拟模型 HTTP 响应加真实 Docker。
+- **Library 独立学习与传递依赖。** 当前只支持宿主预置批准库，库更新会阻止执行，但不会自动重验证。
 - **审查工作流。** 缺口在"审查证明绑定到版本和权限"，不是 UI。
 - **生命周期只扫不写。** `archive` / `restore` / `purge` 三项都还是设计目标。
-- **MCP、Eino、OpenHands Adapter** 都没开始。
+- **完整 MCP Server、Eino、OpenHands Adapter。** MCP 当前只有只读嵌入原型，尚未完成客户端兼容验收。
 - **语义检索是关键词。** 没有 embedder 实现。
 
 ## 十、下一步的顺序
 
-按依赖关系排，不是按有趣程度排：
+可执行 LibraryRefs 和真正的 ToolGenerator 已完成本轮实现与回归，接下来需要：
 
-1. **可执行的 Library 依赖** —— `LibraryStore` 缺 `List`，`validation_service` 的拒绝分支要拆开。做完它，Tool 才真的能共享底层实现，"Library 复用"才不是一句空话。
-2. **真正的 `ToolGenerator`** —— 补上它，benchmark 才能报告真实执行成功率和真实 token 账单，而不是靠 suite 声明。
-3. **审查工作流** —— 让特权工具有一条能真正走通的路径，而不是永远卡在 `RequiresReview`。
-4. **embedder + 向量检索** —— 替换关键词打分。在有稳定检索管道的前提下，这是纯粹的质量提升，风险可控。
+1. **真实 Provider 验收** —— 使用独立任务和 Expected 核验输出，记录完整 usage、失败率与延迟，避免从模拟用量推导收益。
+2. **审查工作流** —— 将审查证明绑定到版本、代码和权限，提供特权工具可用的批准路径。
+3. **依赖演进** —— 增加 Library 独立验证入口和依赖 Tool 的重新验证机制。
+4. **embedder + 向量检索** —— 在现有检索管道上补充语义召回，并用标注任务评估排序。
 
-再往后才是 MCP / Eino Adapter、代码相似度检测、共享 Library 自动抽取、故障分析与自动修复。这些都是 AGENTS.md 明确划入第二阶段的能力，现在做等于在没有地基的上盖楼。
+完整 MCP / Eino 接入、代码相似度检测、共享 Library 自动抽取和自动修复仍是后续工作；当前 MCP 原型边界见 [mcp.md](mcp.md)。
 
 ## 十一、几个还在的取舍
 
@@ -296,7 +299,7 @@ EvoTool 不内置大模型。任务的 `Package`（本该生成的产物）和 `
 
 **"重复生成"的判定是按包名。** 两个 Agent 用不同名字写了功能完全相同的工具，benchmark 不会算作重复。这低估了重复率，但在没有相似度检测之前，按包名是唯一不会误报的办法。
 
-**`AverageLatency` 只统计决策耗时，不包含执行。** 它适合做回归对比，不适合对外说"任务快了多少"。
+**静态 Benchmark 的 `AverageLatency` 只统计决策耗时，不包含执行。** 它适合做回归对比，不适合对外说"任务快了多少"。Live 的同名指标包含生成/检索、验证、执行和输出核验，仍受冷启动与网络状态影响。
 
 这些不是待办事项，是已知的、被有意保留的不确定性。写下来是为了让下一个接手的人知道哪里是猜的。
 

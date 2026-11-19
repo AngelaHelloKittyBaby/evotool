@@ -2,12 +2,13 @@ package domain
 
 // TaskSpec 是用户任务或 Agent 任务的标准化描述。
 type TaskSpec struct {
-	Intent         string
-	InputSummary   string
-	Constraints    []string
-	ExpectedOutput string
-	Domain         string
-	Metadata       map[string]string
+	Intent            string
+	InputSummary      string
+	Constraints       []string
+	ExpectedOutput    string
+	Domain            string
+	Metadata          map[string]string
+	LibraryCandidates []LibraryCandidate
 }
 
 // ToolCandidate 表示一次检索得到的候选工具及其匹配信息。
@@ -31,4 +32,13 @@ type GeneratedTool struct {
 	Dependencies      []DependencyRef
 	LibraryCandidates []LibraryCandidate
 	GenerationReason  string
+	Generation        GenerationInfo
+}
+
+// GenerationInfo is provided by the adapter, not by model-generated text.
+type GenerationInfo struct {
+	Model      string
+	ResponseID string
+	Usage      TokenUsage
+	UsageKnown bool
 }

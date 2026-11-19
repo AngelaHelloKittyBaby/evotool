@@ -1,0 +1,7 @@
+{
+ "Name":"csv_live_reuse",
+ "Tasks":[
+  {"Name":"monthly","Spec":{"Intent":"Create csv_numeric_summary: summarize a numeric column in CSV text","InputSummary":"JSON fields csv and column","ExpectedOutput":"JSON count, total, average; zero values for empty CSV","Domain":"data_processing"},"Input":{"csv":"amount\n10\n20\n30\n","column":"amount"},"Expected":{"count":3,"total":60,"average":20}},
+  {"Name":"quarterly","Spec":{"Intent":"Create csv_numeric_summary: summarize a numeric column in CSV text","InputSummary":"JSON fields csv and column","ExpectedOutput":"JSON count, total, average; zero values for empty CSV","Domain":"data_processing"},"Input":{"csv":"amount\n40\n60\n","column":"amount"},"Expected":{"count":2,"total":100,"average":50}}
+ ]
+}

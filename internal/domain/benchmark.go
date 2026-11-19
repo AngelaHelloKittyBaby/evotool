@@ -19,6 +19,8 @@ type BenchmarkTask struct {
 	Package    GeneratedTool
 	TokenUsage TokenUsage
 	Input      map[string]any
+	// Expected is an independent execution oracle used only by live benchmarks.
+	Expected map[string]any
 }
 
 // BenchmarkMode 表示基准的一次运行模式。

@@ -1,5 +1,7 @@
 # Benchmark：度量复用省下了什么
 
+本文下方介绍 `benchmark run` 的静态重放模式。另有 `benchmark live`，已接入 ToolGenerator、沙箱验证、实际执行及独立输出核验，使用 provider 返回的 token；详见 [模型生成与实测 Benchmark](generation.md)。不要把两种模式的结果混用。
+
 EvoTool 的核心主张是“已有能力被复用，就不再重复生成”。论文不需要，但需要可复现的数字。这份文档说明当前 benchmark 实测什么、不实测什么，以及怎么跑。
 
 对应实现：`internal/service/benchmark_service.go`、`cmd/evotool/benchmark.go`、`internal/domain/benchmark.go`。
@@ -18,7 +20,7 @@ evotool ：先检索能力记忆；命中的工具通过依赖健康检查就复
 
 ## 度量的是什么
 
-EvoTool 不内置大模型。任务的 `Package`（本该生成的产物）和 `TokenUsage`（本该花掉的生成成本）都由 suite 提供。
+静态 `benchmark run` 不调用大模型。任务的 `Package`（本该生成的产物）和 `TokenUsage`（本该花掉的生成成本）都由 suite 提供。
 
 因此这个 benchmark 度量的是**复用替代了多少次生成**，不是模型生成质量，也不是真实 token 账单。
 
@@ -123,8 +125,12 @@ total tokens                       3600          0      -3600
 - 没有包含工具执行耗时，`AverageLatency` 只是本地决策耗时。
 - 没有覆盖跨轮学习。任务序列内的学习效应不在度量范围内。
 
-要做到上面这些，需要一个接入了真实 `ToolGenerator` 和执行器的 harness。当前 `ToolGenerator` 还没有实现，所以在补上它之前，这份文档不会给出“端到端省了多少钱”的结论。
+这些指标已由独立的 `benchmark live` 路径实现；静态 `benchmark run` 保持现有重放语义，不会冒充现场模型调用。真实费用结论仍需使用者在自己的模型配置下运行并核对账单。
 
 ## 与其他指标的关系
 
-benchmark 只读能力记忆，不改它：不写入执行历史，不更新 `UsageStats`，不影响后续检索排序。想让执行结果影响排序，走正常的 `execute` 路径，见 [`docs/learning.md`](learning.md) 的“使用统计与检索排序”。
+静态 `benchmark run` 只读能力记忆：不写执行历史、不更新 `UsageStats`、不影响后续检索排序。`benchmark live` 则会学习工具、记录执行并更新统计，需使用专门的实验目录。正常执行的统计流程见 [learning.md](learning.md) 的“使用统计与检索排序”。
+
+## 历史验证
+
+2026-11-18，已保存 CSV 工具时，静态重放的生成次数由 3 降为 0、复用次数由 0 升为 3。3600 token 来自 suite 估算，不是模型 API 实测。当前生成与执行闭环的验证证据见 [verification.md](verification.md)。

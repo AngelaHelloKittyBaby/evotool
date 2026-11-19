@@ -234,6 +234,32 @@ func (s *LibraryStore) Update(ctx context.Context, library domain.Library) error
 	return s.Save(ctx, library)
 }
 
+// List enumerates library metadata without coupling callers to filesystem paths.
+func (s *LibraryStore) List(ctx context.Context) ([]domain.Library, error) {
+	if err := checkContext(ctx); err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(filepath.Join(s.root, "libraries"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.Library, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		lib, err := s.Get(ctx, entry.Name())
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, lib)
+	}
+	return result, nil
+}
+
 // UpsertToolMetadata 保存 Tool 检索和治理所需元数据。
 func (s *RegistryStore) UpsertToolMetadata(ctx context.Context, tool domain.Tool) error {
 	if err := checkContext(ctx); err != nil {

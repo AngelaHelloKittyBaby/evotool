@@ -28,7 +28,7 @@ func run(args []string) error {
 	}
 
 	switch args[0] {
-	case "learn", "execute":
+	case "learn", "execute", "generate":
 		return runToolWorkflow(args[0], args[1:])
 	case "search":
 		return runSearch(args[1:])
@@ -72,6 +72,8 @@ func runBenchmark(args []string) error {
 	}
 
 	switch args[0] {
+	case "live":
+		return runLiveBenchmark(args[1:])
 	case "run":
 		flags := flag.NewFlagSet("benchmark run", flag.ContinueOnError)
 		root := flags.String("root", filesystem.DefaultRoot, "EvoTool memory root directory")
@@ -569,6 +571,8 @@ func printUsage() {
 	fmt.Println(`EvoTool
 
 Usage:
+  evotool generate --task task.json --root .evotool [--image python:3.13-alpine]
+  evotool benchmark live --suite live-suite.json --root dedicated-memory [--out report.json]
   evotool learn --package generated.json [--root .evotool] [--image python:3.13-alpine]
   evotool execute --id csv_analyzer --input input.json [--root .evotool]
   evotool benchmark run --suite benchmark.json [--root .evotool] [--out result.json]

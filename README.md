@@ -8,6 +8,8 @@ EvoTool helps AI agents turn one-off generated scripts into validated, searchabl
 
 For the design reasoning, the progress as of the latest commit, and the tradeoffs still unresolved, read [the project write-up](docs/blog-capability-memory.md).
 
+See the [documentation index](docs/README.md) for current feature boundaries and verification commands.
+
 ## Quick Start
 
 External agents submit Python tool packages for sandbox validation and reuse. See [the learning workflow and one-command acceptance test](docs/learning.md). This path requires a running Docker Linux engine and a prepared Python image; it does not embed an LLM.
@@ -63,7 +65,7 @@ The default policy marks Tools unused for 90 days as `stale` candidates and Tool
 
 EvoTool is in the early design and MVP stage.
 
-The execution policy service checks lifecycle, validation trust, version presence, and explicit host resource ceilings. `ExecutionService` coordinates dependency checks, policy checks, audit events, executor calls, and execution history. The external submission workflow now validates dependency-free Python tools and executes them through a Docker sandbox. The benchmark runner replays a task suite in both baseline and EvoTool mode and reports what reuse actually saved. Privileged submissions are rejected; model generation, executable shared-library dependencies, and a review approval interface are not implemented yet. See [the learning workflow](docs/learning.md), [the benchmark](docs/benchmark.md), and [the security model](docs/security.md).
+The execution policy service checks lifecycle, validation trust, version presence, and explicit host resource ceilings. `ExecutionService` coordinates dependency checks, policy checks, audit events, executor calls, and execution history. Python tools can execute approved shared-library versions inside Docker, with source digests checked before use. A configurable model Adapter generates candidates that pass the same validator. Static benchmark replay and live generation/execution benchmarks are separate commands. Privileged submissions are rejected; a review approval interface is not implemented yet. See [generation and live benchmarks](docs/generation.md), [library execution](docs/library-execution.md), and [the security model](docs/security.md).
 
 ## Core Idea
 
@@ -302,7 +304,7 @@ total tokens                       3600          0      -3600
 
 With an empty capability memory the same suite reports every delta as `+0`. That zero is the point: the runner does not hardcode a saving.
 
-EvoTool embeds no model, so the token counts are the generation cost each task declares in the suite. The runner measures how many generations reuse replaced, not model generation quality, and it does not execute the generated tools. The boundary is documented in [`docs/benchmark.md`](docs/benchmark.md).
+For `benchmark run`, token counts are estimates declared by the suite and tools are not executed. The separate `benchmark live` command calls a configured model, validates and executes the generated tools, compares independent expected outputs, and records provider-reported usage. See [live benchmark instructions](docs/generation.md).
 
 Key metrics:
 
@@ -310,9 +312,9 @@ Key metrics:
 - Duplicate generation count
 - Tool reuse count
 - Library reuse count
-- Average decision latency
+- Average decision latency (static) or end-to-end task latency (live)
 - Average token usage
-- Success and failure rates, once execution is wired into the harness
+- Success and failure rates in live mode
 - Safety policy blocks
 - Dependency-related failures
 
@@ -330,14 +332,17 @@ Implemented:
 - Safety policy model with fail-closed privileged permissions
 - Read-only lifecycle scan for stale and archive candidates
 - Benchmark runner comparing baseline and EvoTool reuse
+- Executable approved shared libraries pinned by version and content digest
+- Configurable Chat Completions ToolGenerator via `evotool generate`
+- Live benchmark with generation, validation, execution, independent output checks, and response usage
+- Experimental embedded read-only MCP adapter; full protocol compatibility remains unverified
 
 Not yet implemented:
 
-- Model generation: `ToolGenerator` has no implementation, so tools are submitted by an external agent
-- Executable shared-library dependencies: `LibraryRefs` are recorded and health-checked but rejected at validation
+- Automatic library learning, transitive dependency resolution, and automatic dependent-tool revalidation
 - A review approval interface for high-risk tools
 - Lifecycle archive, restore, and purge commands
-- MCP server adapter
+- Complete deployable MCP server and client compatibility verification
 - Eino adapter first, then OpenHands adapter
 - Semantic/vector retrieval, replacing the current keyword retriever
 - Code similarity detection and shared library extraction candidates

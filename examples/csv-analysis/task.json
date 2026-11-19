@@ -1,0 +1,7 @@
+{
+  "Intent":"Create csv_numeric_summary: summarize a numeric column in CSV text",
+  "InputSummary":"JSON object with csv (CSV text) and column (header name); do not read host files",
+  "ExpectedOutput":"JSON object with count (integer), total (number), average (number). Empty data gives count=0, total=0, average=0.",
+  "Domain":"data_processing",
+  "Constraints":["Offline Python standard library only","Name the tool csv_numeric_summary"]
+}

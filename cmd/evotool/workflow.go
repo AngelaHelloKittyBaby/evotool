@@ -7,6 +7,8 @@ import (
 	"flag"
 	"fmt"
 	pythonexecutor "github.com/AngelaHelloKittyBaby/evotool/internal/adapter/executor/python"
+	chatgenerator "github.com/AngelaHelloKittyBaby/evotool/internal/adapter/generator/chat"
+	localretriever "github.com/AngelaHelloKittyBaby/evotool/internal/adapter/retriever/local"
 	dockersandbox "github.com/AngelaHelloKittyBaby/evotool/internal/adapter/sandbox/docker"
 	"github.com/AngelaHelloKittyBaby/evotool/internal/adapter/store/filesystem"
 	"github.com/AngelaHelloKittyBaby/evotool/internal/domain"
@@ -22,6 +24,7 @@ func runToolWorkflow(command string, args []string) error {
 	pkg := flags.String("package", "", "generated package JSON file")
 	id := flags.String("id", "", "stored tool ID")
 	input := flags.String("input", "", "input JSON file")
+	taskFile := flags.String("task", "", "TaskSpec JSON file for model generation")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -34,13 +37,30 @@ func runToolWorkflow(command string, args []string) error {
 		return err
 	}
 	sandbox := dockersandbox.Sandbox{Image: *image}
+	libraries := service.LibrarySources{Store: stores.Libraries}
 	ctx := context.Background()
+	if command == "generate" {
+		var task domain.TaskSpec
+		if err = readWorkflowJSON(*taskFile, &task); err != nil {
+			return err
+		}
+		generator, err := chatgenerator.New(chatgenerator.Config{Endpoint: os.Getenv("EVOTOOL_MODEL_ENDPOINT"), APIKey: os.Getenv("EVOTOOL_MODEL_API_KEY"), Model: os.Getenv("EVOTOOL_MODEL")})
+		if err != nil {
+			return err
+		}
+		learning := service.LearningService{Memory: memory, Validator: service.ValidationService{Sandbox: sandbox, Libraries: libraries}, Libraries: libraries, Generator: generator, LibraryRetriever: localretriever.NewLibraryRetriever(*root)}
+		tool, generated, report, err := learning.GenerateAndLearn(ctx, task)
+		if encodeErr := json.NewEncoder(os.Stdout).Encode(map[string]any{"tool_id": tool.ID, "generation": generated.Generation, "validation": report}); encodeErr != nil {
+			return encodeErr
+		}
+		return err
+	}
 	if command == "learn" {
 		var generated domain.GeneratedTool
 		if err = readWorkflowJSON(*pkg, &generated); err != nil {
 			return err
 		}
-		learning := service.LearningService{Validator: service.ValidationService{Sandbox: sandbox}, Memory: memory}
+		learning := service.LearningService{Validator: service.ValidationService{Sandbox: sandbox, Libraries: libraries}, Memory: memory, Libraries: libraries}
 		tool, report, err := learning.LearnSubmittedTool(ctx, generated)
 		if err != nil {
 			_ = json.NewEncoder(os.Stdout).Encode(report)
@@ -66,7 +86,7 @@ func runToolWorkflow(command string, args []string) error {
 	if err != nil {
 		return err
 	}
-	execution, err := service.NewExecutionService(service.ExecutionServiceConfig{ToolStore: stores.Tools, Dependencies: dependencies, Policy: policy, Executor: pythonexecutor.Executor{Sandbox: sandbox}, Recorder: stores.Executions, Audit: stores.Audit, Usage: stores.Usage})
+	execution, err := service.NewExecutionService(service.ExecutionServiceConfig{ToolStore: stores.Tools, Dependencies: dependencies, Policy: policy, Executor: pythonexecutor.Executor{Sandbox: sandbox, Libraries: libraries}, Recorder: stores.Executions, Audit: stores.Audit, Usage: stores.Usage})
 	if err != nil {
 		return err
 	}

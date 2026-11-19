@@ -8,9 +8,13 @@ EvoTool 帮助 AI Agent 把一次性的生成脚本变成经过验证、可检�
 
 关于设计思路、当前进度和仍未解决的取舍，请阅读[项目设计长文](docs/blog-capability-memory.md)。
 
+使用指南、功能边界及验证命令统一见 [文档导航](docs/README.md)。
+
 ## 快速开始
 
 外部 Agent 提交 Python Tool 包，经沙箱验证后进入能力记忆。详见[学习流程与一键验收测试](docs/learning.md)。这条路径需要可用的 Docker Linux 引擎和准备好的 Python 镜像，本身不内嵌 LLM。
+
+也可通过 `evotool generate` 调用已配置的 Chat Completions 模型生成 Tool，仍须通过相同验证流程；配置方法及 `benchmark live` 用法见 [模型生成指南](docs/generation.md)。
 
 从一个提交的包学习一个 Tool：
 
@@ -63,7 +67,7 @@ go run ./cmd/evotool lifecycle scan --root .evotool
 
 EvoTool 处于早期设计与 MVP 阶段。
 
-执行策略服务会检查生命周期、验证可信度、版本是否存在，以及显式声明的宿主机资源上限。`ExecutionService` 负责编排依赖检查、策略检查、审计事件、执行器调用和执行历史。外部提交流程目前可以验证无依赖的 Python Tool，并通过 Docker 沙箱执行它们。Benchmark Runner 会以 baseline 和 EvoTool 两种模式重放任务套件，报告复用实际节省了什么。涉及特权的提交会被拒绝；模型生成、可执行的共享库依赖、以及审查批准界面尚未实现。详见[学习流程](docs/learning.md)、[Benchmark](docs/benchmark.md) 和[安全模型](docs/security.md)。
+执行策略服务会检查生命周期、验证可信度、版本和资源上限。`ExecutionService` 编排依赖检查、策略检查、审计、执行及历史。Python Tool 可使用标准库和预置批准的共享 Library，并通过 Docker 验证与执行。已接入模型生成 Adapter 和 live Benchmark；涉及特权的提交仍会被拒绝，审查批准入口尚未实现。真实供应商模型质量及费用收益尚未实测。详见 [学习流程](docs/learning.md)、[共享库](docs/library-execution.md)、[模型生成](docs/generation.md) 和 [安全模型](docs/security.md)。
 
 ## 核心思路
 
@@ -302,7 +306,7 @@ total tokens                       3600          0      -3600
 
 在空能力记忆下，同一套件所有 delta 都是 `+0`。这个零正是重点：Runner 不会硬编码一个“节省”的结论。
 
-EvoTool 本身不内嵌模型，所以 token 数是套件中每个任务自己声明的生成成本。Runner 度量的是复用替代了多少次生成，而不是模型生成质量，也不会执行生成的工具。这条边界记录在 [`docs/benchmark.md`](docs/benchmark.md) 中。
+上述 `benchmark run` 的 token 数来自套件声明，仅重放复用决策，不执行工具。独立的 `benchmark live` 调用已配置的模型，验证并执行生成工具，核验独立 Expected，并记录 Provider 返回的 usage。两种结果不能混用，详见 [静态 Benchmark](docs/benchmark.md) 和 [live Benchmark](docs/generation.md)。
 
 关键指标：
 
@@ -310,9 +314,9 @@ EvoTool 本身不内嵌模型，所以 token 数是套件中每个任务自己�
 - 重复生成次数
 - 工具复用次数
 - Library 复用次数
-- 平均决策延迟
+- 平均决策延迟（静态模式）或平均总任务时长（live 模式）
 - 平均 token 使用量
-- 成功率与失败率（执行接入 harness 之后）
+- 成功率与失败率（live 模式）
 - 安全策略拦截次数
 - 依赖相关失败次数
 
@@ -330,14 +334,17 @@ EvoTool 本身不内嵌模型，所以 token 数是套件中每个任务自己�
 - 特权权限 fail-closed 的安全策略模型
 - 只读的 stale 与归档候选生命周期扫描
 - 对比 baseline 与 EvoTool 复用效果的 Benchmark Runner
+- 可执行 LibraryRefs：固定版本与摘要，验证及执行时注入批准库
+- 可配置 Chat Completions ToolGenerator 与 `generate` 命令
+- 实际生成、验证、执行、输出核验和 usage 记录的 live Benchmark
+- MCP 只读嵌入原型，尚未完成完整协议与客户端验收
 
 尚未实现：
 
-- 模型生成：`ToolGenerator` 没有实现，工具由外部 Agent 提交
-- 可执行的共享库依赖：`LibraryRefs` 会被记录和健康检查，但在验证阶段被拒绝
+- Library 自动学习、独立审查、传递依赖和自动重验证
 - 高风险工具的审查批准界面
 - 生命周期归档、恢复和清理命令
-- MCP Server Adapter
+- 完整可部署的 MCP Server 与客户端兼容验收
 - 先做 Eino Adapter，再做 OpenHands Adapter
 - 语义/向量检索，替换当前的关键词检索器
 - 代码相似度检测和共享 Library 抽取候选

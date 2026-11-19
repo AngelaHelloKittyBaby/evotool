@@ -19,6 +19,7 @@ type Tool struct {
 	UpdatedAt        time.Time
 	Validation       *ValidationResult
 	GenerationReason string
+	Generation       GenerationInfo
 }
 
 // ToolManifest 描述工具的机器可读契约。
